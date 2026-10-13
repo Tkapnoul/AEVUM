@@ -24,7 +24,7 @@ export function Today() {
   const summary = useFetch<Summary>("/metrics/summary", { pollMs: 60_000 });
   const bookings = useFetch<{ bookings: Booking[] }>("/care/bookings?scope=upcoming");
   const insight = useFetch<{ text: string | null; reason?: string }>("/ai/insight");
-  const bio = useFetch<{ chronoAge: number | null; latestDone: { report: { overall_bio_age: number } | null } | null }>("/bioage");
+  const bio = useFetch<BioSummary>("/bioage");
 
   const s = summary.data;
   // Show the metrics this member's device actually provides (steps and resting HR always, as the basics).
@@ -156,9 +156,17 @@ export function Today() {
   );
 }
 
-function BioCard({ data }: { data: { chronoAge: number | null; latestDone: { report: { overall_bio_age: number } | null } | null } | null }) {
+interface BioSummary {
+  chronoAge: number | null;
+  latestDone: { report: { overall_bio_age: number } | null } | null;
+  phenoAge: { value: number | null };
+}
+
+function BioCard({ data }: { data: BioSummary | null }) {
   const { t, fmtNum } = useI18n();
-  const bio = data?.latestDone?.report?.overall_bio_age ?? null;
+  // The AI report is the headline number; until there is one, PhenoAge from blood tests stands in.
+  const ai = data?.latestDone?.report?.overall_bio_age ?? null;
+  const bio = ai ?? data?.phenoAge.value ?? null;
   const delta = bio != null && data?.chronoAge != null ? bio - data.chronoAge : null;
   return (
     <Link to="/bioage" className="mt-3 block">
@@ -167,7 +175,7 @@ function BioCard({ data }: { data: { chronoAge: number | null; latestDone: { rep
           <Hourglass className="size-5" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="font-medium">{t("bio.title")}</p>
+          <p className="font-medium">{ai == null && bio != null ? "PhenoAge" : t("bio.title")}</p>
           <p className="truncate text-sm text-ink-2">
             {delta == null ? t("bio.notYet") : delta < -0.4 ? t("bio.younger", { n: fmtNum(-delta, 1) }) : delta > 0.4 ? t("bio.older", { n: fmtNum(delta, 1) }) : t("bio.same")}
           </p>
