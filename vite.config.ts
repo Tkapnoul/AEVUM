@@ -10,7 +10,11 @@ const localShims = process.env.VITEST
   ? {}
   : { "node:sqlite": shim("sqlite.ts"), "node:crypto": shim("crypto.ts"), "node:fs": shim("fs.ts"), "node:path": shim("path.ts") };
 
+// Served from a sub-path on GitHub Pages (VITE_BASE=/AEVUM/); "/" everywhere else.
+const base = process.env.VITE_BASE ?? "/";
+
 export default defineConfig({
+  base,
   resolve: { alias: localShims },
   plugins: [
     react(),
@@ -23,25 +27,25 @@ export default defineConfig({
         short_name: "AEVUM",
         description: "Your health data, your care team and AI guidance in one place.",
         lang: "el",
-        start_url: "/",
-        scope: "/",
+        start_url: base,
+        scope: base,
         display: "standalone",
         orientation: "portrait",
         background_color: "#0E0F0C",
         theme_color: "#0E0F0C",
         categories: ["health", "fitness", "medical"],
         icons: [
-          { src: "/pwa-192.png", sizes: "192x192", type: "image/png" },
-          { src: "/pwa-512.png", sizes: "512x512", type: "image/png" },
-          { src: "/pwa-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: `${base}pwa-192.png`, sizes: "192x192", type: "image/png" },
+          { src: `${base}pwa-512.png`, sizes: "512x512", type: "image/png" },
+          { src: `${base}pwa-maskable-512.png`, sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
         shortcuts: [
-          { name: "AEVUM AI", url: "/ai" },
-          { name: "Sessions", url: "/care" },
+          { name: "AEVUM AI", url: `${base}ai` },
+          { name: "Sessions", url: `${base}care` },
         ],
       },
       workbox: {
-        navigateFallback: "/index.html",
+        navigateFallback: `${base}index.html`,
         navigateFallbackDenylist: [/^\/api\//],
         globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
         runtimeCaching: [

@@ -145,7 +145,7 @@ export function Profile({ onLocale }: { onLocale: (l: Locale) => void }) {
 
       <SectionTitle>{t("profile.privacy")}</SectionTitle>
       <Card className="divide-y divide-line p-0">
-        {!isNative && (
+        {!isNative && !isLocal() && (
           <a href="/api/auth/me/export" className="flex items-center gap-4 px-5 py-4 text-sm">
             <Download className="size-5 text-ink-2" aria-hidden /> {t("profile.export")}
           </a>

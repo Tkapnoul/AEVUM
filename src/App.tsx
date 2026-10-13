@@ -106,7 +106,7 @@ export function App() {
   return (
     <I18nProvider locale={locale}>
       <SessionProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <Suspense fallback={<Spinner />}>
             <Routed onLocale={changeLocale} />
           </Suspense>

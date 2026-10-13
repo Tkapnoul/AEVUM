@@ -15,7 +15,9 @@ export const LOCAL = "local";
 
 // Local mode can also be switched on in a desktop browser (localStorage "aevum_local" = "1"), which is how
 // it is exercised in automated browser tests; real users get it in the phone app.
-const webLocal = !isNative && typeof localStorage !== "undefined" && localStorage.getItem("aevum_local") === "1";
+// The GitHub Pages build (VITE_LOCAL_ONLY=1) is local-only: an iPhone home-screen app with no server.
+const webLocal =
+  !isNative && (import.meta.env.VITE_LOCAL_ONLY === "1" || (typeof localStorage !== "undefined" && localStorage.getItem("aevum_local") === "1"));
 
 export async function loadNativeState() {
   if (webLocal) {

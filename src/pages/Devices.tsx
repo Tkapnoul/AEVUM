@@ -35,7 +35,7 @@ export function Devices() {
           <Smartphone className="mt-0.5 size-5 shrink-0 text-gold" aria-hidden />
           <div>
             <p className="font-medium">{t("devices.getApp")}</p>
-            <p className="mt-1 text-sm text-ink-2">{t("devices.getAppText")}</p>
+            <p className="mt-1 text-sm text-ink-2">{t(isLocal() ? "devices.getAppTextLocal" : "devices.getAppText")}</p>
           </div>
         </Card>
       )}
@@ -70,7 +70,7 @@ export function Devices() {
       )}
 
       {isLocal() ? (
-        <p className="mt-6 text-sm text-ink-3">{t("devices.localNote")}</p>
+        <p className="mt-6 text-sm text-ink-3">{t(isNative ? "devices.localNote" : "devices.localNoteWeb")}</p>
       ) : (
         <>
           <SectionTitle>{t("devices.zepp")}</SectionTitle>
