@@ -75,8 +75,9 @@ async function boot(): Promise<Fetcher> {
   const [jwt, gemini, initSqlJs, wasmUrl, saved] = await Promise.all([
     secret(),
     getGeminiKey(),
-    import("sql.js").then((m) => m.default),
-    import("sql.js/dist/sql-wasm-browser.wasm?url").then((m) => m.default),
+    // Sandboxed viewers may forbid WebAssembly; the asm.js build of SQLite is plain JavaScript (slower, same API).
+    import.meta.env.VITE_EMBED === "1" ? import("sql.js/dist/sql-asm.js").then((m) => m.default) : import("sql.js").then((m) => m.default),
+    import.meta.env.VITE_EMBED === "1" ? "" : import("sql.js/dist/sql-wasm-browser.wasm?url").then((m) => m.default),
     idb<Uint8Array | undefined>("readonly", (st) => st.get(IDB.key)).catch(() => undefined),
   ]);
   (globalThis as unknown as { process: { env: Record<string, string> } }).process = {

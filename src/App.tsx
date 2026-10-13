@@ -1,5 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
+
+// Embedded in a sandboxed viewer (VITE_EMBED=1, e.g. a claude.ai artifact) the page URL isn't ours to route on.
+const Router = import.meta.env.VITE_EMBED === "1" ? MemoryRouter : BrowserRouter;
 import { I18nProvider, detectLocale } from "./lib/i18n";
 import { SessionProvider, useSession } from "./lib/session";
 import { AppShell } from "./components/AppShell";
@@ -106,11 +109,11 @@ export function App() {
   return (
     <I18nProvider locale={locale}>
       <SessionProvider>
-        <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+        <Router basename={import.meta.env.VITE_EMBED === "1" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <Suspense fallback={<Spinner />}>
             <Routed onLocale={changeLocale} />
           </Suspense>
-        </BrowserRouter>
+        </Router>
       </SessionProvider>
     </I18nProvider>
   );

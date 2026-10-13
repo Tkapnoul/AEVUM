@@ -64,7 +64,7 @@ const el = {
   "today.bookOne": "Κλείσε ραντεβού",
   "today.metrics": "Σήμερα με αριθμούς",
   "today.connectWatch": "Σύνδεσε το ρολόι σου",
-  "today.connectWatchHint": "Συγχρόνισε ύπνο, παλμούς, βήματα και στρες από το Amazfit Bip 6.",
+  "today.connectWatchHint": "Ύπνος, παλμοί, βήματα, HRV και VO₂max από οποιοδήποτε ρολόι, μέσω Apple Health ή Health Connect.",
   "today.lastSync": "Τελευταίος συγχρονισμός",
   "today.stale": "Άνοιξε την εφαρμογή AEVUM στο ρολόι για συγχρονισμό.",
   // pillars
@@ -417,7 +417,7 @@ const en: Record<MessageKey, string> = {
   "today.bookOne": "Book a session",
   "today.metrics": "Today in numbers",
   "today.connectWatch": "Connect your watch",
-  "today.connectWatchHint": "Sync sleep, heart rate, steps and stress from your Amazfit Bip 6.",
+  "today.connectWatchHint": "Sleep, heart rate, steps, HRV and VO₂max from any watch, through Apple Health or Health Connect.",
   "today.lastSync": "Last sync",
   "today.stale": "Open the AEVUM app on your watch to sync.",
   "pillar.sleep": "Sleep",

@@ -8,7 +8,7 @@ import "./styles.css";
 
 applyTheme(getTheme());
 // The native app ships its assets inside the APK/IPA; a service worker only matters for the PWA.
-if (!isNative) registerSW({ immediate: true });
+if (!isNative && import.meta.env.VITE_EMBED !== "1") registerSW({ immediate: true });
 
 await loadNativeState();
 createRoot(document.getElementById("root")!).render(
