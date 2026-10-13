@@ -114,6 +114,10 @@ describe("admin and labs", () => {
     expect(bio.phenoAge.missing).toEqual([]);
     expect(bio.phenoAge.value).toBeLessThan(bio.chronoAge);
     expect(bio.aiEnabled).toBe(false);
-    expect((await call("POST", "/api/bioage", { headers: native(tok) })).status).toBe(503);
+    // Without AI the rule-based engine answers immediately.
+    const { id } = (await call("POST", "/api/bioage", { headers: native(tok) })).json;
+    const rep = (await call("GET", `/api/bioage/${id}`, { headers: native(tok) })).json;
+    expect(rep).toMatchObject({ status: "done", method: "rules" });
+    expect(rep.report.systems.find((s: { key: string }) => s.key === "inflammation_blood").bio_age).toBeCloseTo(bio.phenoAge.value, 1);
   });
 });

@@ -3,7 +3,7 @@ import { streamSSE } from "hono/streaming";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { all, get, run, tx } from "../db.js";
-import { config } from "../config.js";
+import { aiProvider, config } from "../config.js";
 import { requireRole, requireUser, type AppEnv } from "../auth.js";
 import { body, HttpError, rateLimit } from "../lib/validate.js";
 import { newId } from "../lib/ids.js";
@@ -12,6 +12,8 @@ import { SYSTEM_PROMPT } from "../ai/prompt.js";
 import { TOOLS, runTool } from "../ai/tools.js";
 import { memberSnapshot } from "../ai/context.js";
 import { anthropic, FALLBACK } from "../ai/client.js";
+import { dailyInsight, insights } from "../lib/insights.js";
+import { complete, FreeAiError, streamTurn, type ChatMessage, type FunctionTool } from "../ai/free.js";
 
 type MessageParam = Anthropic.Beta.BetaMessageParam;
 type ContentBlock = Anthropic.Beta.BetaContentBlock;
@@ -28,7 +30,15 @@ const MAX_TOOL_ROUNDS = 6;
 export const aiRoutes = new Hono<AppEnv>();
 aiRoutes.use("*", requireUser);
 
-aiRoutes.get("/status", (c) => c.json({ enabled: config.ai.enabled, model: config.ai.model }));
+aiRoutes.get("/status", (c) =>
+  c.json({ enabled: aiProvider != null, provider: aiProvider, model: aiProvider === "free" ? config.freeAi!.model : config.ai.model }),
+);
+
+// The free provider speaks the OpenAI tool format; same tools, same handlers.
+const FREE_TOOLS: FunctionTool[] = TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.description ?? "", parameters: t.input_schema } }));
+
+/** Anthropic rows hold an array of content blocks; free-provider rows hold one OpenAI-style message object. */
+const isFreeRow = (r: Row) => !r.content.startsWith("[");
 
 interface Row {
   id: number;
@@ -73,7 +83,9 @@ aiRoutes.get("/history", (c) => {
   if (!conv) return c.json({ messages: [] });
   const out: { role: "user" | "assistant"; text: string; ts: number }[] = [];
   for (const r of conv.rows) {
-    const text = textOf(JSON.parse(r.content));
+    if (r.role === "tool") continue;
+    const parsed = JSON.parse(r.content);
+    const text = Array.isArray(parsed) ? textOf(parsed) : typeof parsed.content === "string" ? parsed.content : "";
     if (!text) continue; // tool results and tool-only turns
     const prev = out[out.length - 1];
     if (prev && prev.role === r.role) prev.text += `\n\n${text}`;
@@ -88,15 +100,18 @@ aiRoutes.post("/new", (c) => {
 });
 
 aiRoutes.post("/chat", requireRole("member"), async (c) => {
-  if (!client) throw new HttpError(503, "ai_not_configured");
+  if (!aiProvider) throw new HttpError(503, "ai_not_configured");
   const userId = c.get("user").id;
   rateLimit(`ai:${userId}`, 40, 3600_000);
   const { message } = await body(c, z.object({ message: z.string().trim().min(1).max(4000) }));
 
   let conv = currentConversation(userId);
-  if (!conv || conv.rows.length > CONVERSATION_MAX_ROWS || Date.now() - conv.lastActivity > CONVERSATION_IDLE_MS) {
+  const wrongFormat = conv?.rows.some((r) => isFreeRow(r) !== (aiProvider === "free")); // provider changed since
+  if (!conv || wrongFormat || conv.rows.length > CONVERSATION_MAX_ROWS || Date.now() - conv.lastActivity > CONVERSATION_IDLE_MS) {
     conv = startConversation(userId);
   }
+  if (aiProvider === "free") return freeChat(c, userId, message, conv);
+  if (!client) throw new HttpError(503, "ai_not_configured");
   const convId = conv.id;
   const messages: MessageParam[] = conv.rows.map((r) => ({ role: r.role as "user" | "assistant", content: JSON.parse(r.content) }));
   const userTurn: MessageParam = { role: "user", content: [{ type: "text", text: message }] };
@@ -182,16 +197,32 @@ aiRoutes.post("/chat", requireRole("member"), async (c) => {
   });
 });
 
+/** Rule-based observations for the analysis screen (works without an API key). */
+aiRoutes.get("/analysis", requireRole("member"), (c) => c.json({ items: insights(c.get("user").id) }));
+
 /** One short, data-grounded insight per member per day for the Today screen. */
 aiRoutes.get("/insight", requireRole("member"), async (c) => {
   const user = c.get("user");
   const date = isoDate(Date.now());
   const cached = get<{ content: string }>("SELECT content FROM ai_insights WHERE user_id = ? AND date = ?", user.id, date);
   if (cached) return c.json({ date, text: cached.content });
-  if (!client) return c.json({ date, text: null, reason: "ai_not_configured" });
+  // Without any AI the rule-based observation is computed live (it is cheap and tracks new syncs).
+  if (!aiProvider) return c.json({ date, text: dailyInsight(user.id) });
   rateLimit(`insight:${user.id}`, 5, 3600_000);
 
   const lang = user.locale === "el" ? "Greek" : "English";
+  const ask = `<member_snapshot>\n${memberSnapshot(user.id)}\n</member_snapshot>\n\nWrite today's insight for the Today screen in ${lang}: 2 short sentences. First, the single most notable thing in the data (with the number). Second, one concrete action for today. If there is not enough data, say what to do to get it. No greeting, no headings.`;
+  if (aiProvider === "free") {
+    try {
+      const text = (await complete([{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: ask }], { maxTokens: 2000 })).trim();
+      if (text) run("INSERT OR REPLACE INTO ai_insights (user_id, date, content, created_at) VALUES (?, ?, ?, ?)", user.id, date, text, Date.now());
+      return c.json({ date, text: text || dailyInsight(user.id) });
+    } catch (err) {
+      console.error("[ai] insight failed", err);
+      return c.json({ date, text: dailyInsight(user.id) }); // free tiers hit rate limits; fall back to the rules
+    }
+  }
+  if (!client) return c.json({ date, text: dailyInsight(user.id) });
   try {
     const msg = await client.beta.messages.create({
       model: config.ai.model,
@@ -201,7 +232,7 @@ aiRoutes.get("/insight", requireRole("member"), async (c) => {
       messages: [
         {
           role: "user",
-          content: `<member_snapshot>\n${memberSnapshot(user.id)}\n</member_snapshot>\n\nWrite today's insight for the Today screen in ${lang}: 2 short sentences. First, the single most notable thing in the data (with the number). Second, one concrete action for today. If there is not enough data, say what to do to get it. No greeting, no headings.`,
+          content: ask,
         },
       ],
       ...FALLBACK,
@@ -215,3 +246,50 @@ aiRoutes.get("/insight", requireRole("member"), async (c) => {
     return c.json({ date, text: null, reason: "upstream_error" });
   }
 });
+
+/** Chat through the free OpenAI-compatible provider: same tools, same storage, OpenAI message format. */
+function freeChat(c: Parameters<typeof streamSSE>[0], userId: string, message: string, conv: Conversation) {
+  const convId = conv.id;
+  const history = conv.rows.map((r) => JSON.parse(r.content) as ChatMessage);
+  const userTurn: ChatMessage = { role: "user", content: message };
+  run("INSERT INTO ai_messages (user_id, conversation_id, role, content, created_at) VALUES (?, ?, 'user', ?, ?)", userId, convId, JSON.stringify(userTurn), Date.now());
+  const messages: ChatMessage[] = [
+    { role: "system", content: `${SYSTEM_PROMPT}\n\n<member_snapshot>\n${conv.snapshot}\n</member_snapshot>` },
+    ...history,
+    userTurn,
+  ];
+
+  return streamSSE(c, async (sse) => {
+    const send = (data: object) => sse.writeSSE({ data: JSON.stringify(data) });
+    try {
+      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        // Last round without tools, so the conversation always ends on an answer.
+        const { message: msg } = await streamTurn(messages, round < MAX_TOOL_ROUNDS - 1 ? FREE_TOOLS : [], (delta) => void send({ type: "text", delta }));
+        messages.push(msg);
+        if (!msg.tool_calls?.length) {
+          run("INSERT INTO ai_messages (user_id, conversation_id, role, content, created_at) VALUES (?, ?, 'assistant', ?, ?)", userId, convId, JSON.stringify(msg), Date.now());
+          break;
+        }
+        const results: ChatMessage[] = msg.tool_calls.map((t) => {
+          void send({ type: "tool", name: t.function.name });
+          let content: string;
+          try {
+            content = JSON.stringify(runTool(userId, t.function.name, JSON.parse(t.function.arguments || "{}")));
+          } catch (err) {
+            content = JSON.stringify({ error: err instanceof Error ? err.message : "tool failed" });
+          }
+          return { role: "tool", tool_call_id: t.id, content };
+        });
+        messages.push(...results);
+        tx(() => {
+          run("INSERT INTO ai_messages (user_id, conversation_id, role, content, created_at) VALUES (?, ?, 'assistant', ?, ?)", userId, convId, JSON.stringify(msg), Date.now());
+          for (const r of results) run("INSERT INTO ai_messages (user_id, conversation_id, role, content, created_at) VALUES (?, ?, 'tool', ?, ?)", userId, convId, JSON.stringify(r), Date.now());
+        });
+      }
+      await send({ type: "done" });
+    } catch (err) {
+      console.error("[ai] free chat failed", err);
+      await send({ type: "error", code: err instanceof FreeAiError ? (err.status === 429 ? "rate_limited" : "upstream_error") : "internal_error" });
+    }
+  });
+}

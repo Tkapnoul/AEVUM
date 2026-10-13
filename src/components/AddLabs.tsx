@@ -2,6 +2,10 @@ import { useRef, useState } from "react";
 import { Camera, PenLine, Plus, Trash2 } from "lucide-react";
 import { useI18n } from "../lib/i18n";
 import { apiFetch, post } from "../lib/api";
+import { useFetch } from "../lib/useFetch";
+import { readLabText, type ReadStage } from "../lib/labReader";
+import type { AppConfig } from "../lib/types";
+import { parseLabText } from "../../shared/labText";
 import { Button, Card, cx } from "./ui";
 import { LABS, labDef, type LabKey } from "../../shared/labs";
 
@@ -18,27 +22,53 @@ const emptyRow = (): Row => ({ markerKey: null, marker: "", value: "", unit: "",
 const today = () => new Date().toISOString().slice(0, 10);
 const numOrNull = (s: string) => (s.trim() === "" ? null : Number(s.replace(",", ".")));
 
-/** Add lab results from a photo/PDF (AI extraction, then review) or by hand. */
+type Extracted = { takenAt: string | null; results: { markerKey: LabKey | null; marker: string; value: number; unit: string; refLow: number | null; refHigh: number | null }[] };
+
+/**
+ * Add lab results from a photo/PDF, then review, or by hand. With Claude configured the file goes to the server
+ * (vision); otherwise the device reads the text (PDF text layer or OCR) and the free AI, when configured,
+ * structures it, with the built-in parser as the fallback.
+ */
 export function AddLabs({ member, onSaved }: { member?: string; onSaved: () => void }) {
   const { t, locale } = useI18n();
   const file = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [takenAt, setTakenAt] = useState(today());
   const [reading, setReading] = useState(false);
+  const [stage, setStage] = useState<{ s: ReadStage; p?: number } | null>(null);
+  const config = useFetch<AppConfig>("/config");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const q = member ? `?member=${member}` : "";
+
+  async function viaServer(path: string, init: RequestInit): Promise<Extracted | null> {
+    const res = await apiFetch(`${path}${q}`, init).catch(() => null);
+    if (!res?.ok) return null;
+    const out = (await res.json()) as Extracted;
+    return out.results.length ? out : null;
+  }
 
   async function extract(f: File) {
     setError(null);
     setReading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", f);
-      const res = await apiFetch(`/labs/extract${q}`, { method: "POST", body: fd });
-      if (!res.ok) throw new Error();
-      const out = (await res.json()) as { takenAt: string | null; results: { markerKey: LabKey | null; marker: string; value: number; unit: string; refLow: number | null; refHigh: number | null }[] };
-      if (!out.results.length) throw new Error();
+      let out: Extracted | null = null;
+      if (config.data?.aiProvider === "anthropic") {
+        const fd = new FormData();
+        fd.append("file", f);
+        out = await viaServer("/labs/extract", { method: "POST", body: fd });
+      } else {
+        const text = await readLabText(f, (s, p) => setStage({ s, p }));
+        if (config.data?.aiProvider === "free") {
+          setStage({ s: "ai" });
+          out = await viaServer("/labs/structure", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: text.slice(0, 60_000) }) });
+        }
+        if (!out) {
+          const parsed = parseLabText(text);
+          if (parsed.results.length) out = parsed;
+        }
+      }
+      if (!out) throw new Error();
       if (out.takenAt) setTakenAt(out.takenAt);
       setRows(
         out.results.map((r) => ({
@@ -54,6 +84,7 @@ export function AddLabs({ member, onSaved }: { member?: string; onSaved: () => v
       setError(t("labs.readFailed"));
     } finally {
       setReading(false);
+      setStage(null);
     }
   }
 
@@ -85,11 +116,17 @@ export function AddLabs({ member, onSaved }: { member?: string; onSaved: () => v
 
   const update = (i: number, patch: Partial<Row>) => setRows((rs) => rs!.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
+  const stageLabel =
+    stage?.s === "ocr-load" ? t("labs.stage.ocrLoad")
+      : stage?.s === "ocr" ? t("labs.stage.ocr", { n: Math.round((stage.p ?? 0) * 100) })
+        : stage?.s === "ai" ? t("labs.stage.ai")
+          : t("labs.reading");
+
   if (!rows)
     return (
       <Card className="mb-4">
         <p className="font-medium">{t("labs.add")}</p>
-        <p className="mt-1 text-sm text-ink-2">{t("labs.uploadHint")}</p>
+        <p className="mt-1 text-sm text-ink-2">{t(config.data?.aiProvider ? "labs.uploadHint" : "labs.uploadHintLocal")}</p>
         <input
           ref={file}
           type="file"
@@ -103,7 +140,7 @@ export function AddLabs({ member, onSaved }: { member?: string; onSaved: () => v
         />
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" loading={reading} onClick={() => file.current?.click()}>
-            <Camera className="size-4" aria-hidden /> {reading ? t("labs.reading") : t("labs.upload")}
+            <Camera className="size-4" aria-hidden /> {reading ? stageLabel : t("labs.upload")}
           </Button>
           <Button size="sm" variant="secondary" onClick={() => setRows([emptyRow()])}>
             <PenLine className="size-4" aria-hidden /> {t("labs.manual")}

@@ -3,7 +3,8 @@ import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { run, tx } from "../db.js";
-import { config } from "../config.js";
+import { aiProvider, config } from "../config.js";
+import { completeJson } from "../ai/free.js";
 import { requireUser, type AppEnv } from "../auth.js";
 import { canViewMember } from "../lib/access.js";
 import { newId } from "../lib/ids.js";
@@ -89,6 +90,52 @@ const MEDIA = {
   "application/pdf": "document",
 } as const;
 
+const toReview = (out: z.infer<typeof Extraction>) => ({
+  takenAt: out.taken_at && /^\d{4}-\d{2}-\d{2}$/.test(out.taken_at) ? out.taken_at : null,
+  labName: out.lab_name,
+  results: out.results.map((r) => ({
+    markerKey: r.marker_key === "other" ? null : r.marker_key,
+    marker: r.name_as_printed.slice(0, 80),
+    value: r.value,
+    unit: r.unit.slice(0, 20),
+    refLow: r.ref_low,
+    refHigh: r.ref_high,
+  })),
+});
+
+/** Structures report text the app already read on the device (PDF text layer or OCR). Works with the free provider. */
+labRoutes.post("/structure", async (c) => {
+  if (!aiProvider) throw new HttpError(503, "ai_not_configured");
+  writableSubject(c);
+  rateLimit(`extract:${c.get("user").id}`, 20, 3600_000);
+  const { text } = await body(c, z.object({ text: z.string().trim().min(10).max(60_000) }));
+  const prompt = `${EXTRACT_PROMPT}\nThe report text below was read by OCR or from a PDF; fix obvious OCR slips (O↔0, l↔1, Greek look-alike letters) but never invent values.\n\n<report>\n${text}\n</report>`;
+  try {
+    let out: z.infer<typeof Extraction> | null;
+    if (aiProvider === "free") {
+      out = await completeJson([{ role: "user", content: prompt }], "lab_extraction", z.toJSONSchema(Extraction), (x) => {
+        const r = Extraction.safeParse(x);
+        return r.success ? r.data : null;
+      });
+    } else {
+      const msg = await anthropic!.beta.messages.parse({
+        model: config.ai.model,
+        max_tokens: 16000,
+        output_config: { effort: "low", format: betaZodOutputFormat(Extraction) },
+        messages: [{ role: "user", content: prompt }],
+        ...FALLBACK,
+      });
+      out = msg.stop_reason === "refusal" ? null : msg.parsed_output;
+    }
+    if (!out) throw new HttpError(400, "could_not_read");
+    return c.json(toReview(out));
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    console.error("[labs] structuring failed", err);
+    throw new HttpError(503, "ai_failed");
+  }
+});
+
 labRoutes.post("/extract", async (c) => {
   if (!anthropic) throw new HttpError(503, "ai_not_configured");
   writableSubject(c);
@@ -117,18 +164,7 @@ labRoutes.post("/extract", async (c) => {
     if (msg.stop_reason === "refusal") throw new HttpError(400, "could_not_read");
     const out = msg.parsed_output;
     if (!out) throw new HttpError(400, "could_not_read");
-    return c.json({
-      takenAt: out.taken_at && /^\d{4}-\d{2}-\d{2}$/.test(out.taken_at) ? out.taken_at : null,
-      labName: out.lab_name,
-      results: out.results.map((r) => ({
-        markerKey: r.marker_key === "other" ? null : r.marker_key,
-        marker: r.name_as_printed.slice(0, 80),
-        value: r.value,
-        unit: r.unit.slice(0, 20),
-        refLow: r.ref_low,
-        refHigh: r.ref_high,
-      })),
-    });
+    return c.json(toReview(out));
   } catch (err) {
     if (err instanceof HttpError) throw err;
     console.error("[labs] extraction failed", err);

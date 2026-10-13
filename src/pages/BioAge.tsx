@@ -39,6 +39,7 @@ interface ReportView {
 
 interface Overview {
   aiEnabled: boolean;
+  method: "ai" | "rules";
   birthDateMissing: boolean;
   chronoAge: number | null;
   phenoAge: { value: number | null; missing: string[]; spanDays: number | null; takenAt: number | null; required: string[] };
@@ -82,7 +83,9 @@ export function BioAgePage({ member }: { member?: string }) {
     setError(null);
     try {
       const { id } = await post<{ id: string }>("/bioage");
-      setPending(id);
+      // The rule-based engine finishes inside the request; only AI reports run in the background.
+      if (d.method === "rules") void reload();
+      else setPending(id);
     } catch (e) {
       setError(e instanceof ApiError && e.code === "already_running" ? t("bio.running") : t("bio.failed"));
     }
@@ -108,21 +111,17 @@ export function BioAgePage({ member }: { member?: string }) {
           <Hero view={lastDone} chrono={d.chronoAge!} running={running} />
           {!member && (
             <div className="mt-3">
-              {!d.aiEnabled ? (
-                <p className="text-sm text-ink-3">{t("bio.aiOff")}</p>
-              ) : (
-                <Button className="w-full" onClick={start} loading={running} disabled={running}>
-                  {running ? t("bio.running") : lastDone ? (
-                    <>
-                      <RefreshCw className="size-4" aria-hidden /> {t("bio.rerun")}
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="size-4" aria-hidden /> {t("bio.run")}
-                    </>
-                  )}
-                </Button>
-              )}
+              <Button className="w-full" onClick={start} loading={running} disabled={running}>
+                {running ? t("bio.running") : lastDone ? (
+                  <>
+                    <RefreshCw className="size-4" aria-hidden /> {t("bio.rerun")}
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="size-4" aria-hidden /> {t("bio.run")}
+                  </>
+                )}
+              </Button>
               {error && <p className="mt-2 text-sm text-coral">{error}</p>}
             </div>
           )}
@@ -151,7 +150,7 @@ export function BioAgePage({ member }: { member?: string }) {
         <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
           <Info className="size-4" aria-hidden /> {t("bio.method")}
         </summary>
-        <p className="mt-3 leading-relaxed">{t("bio.methodText")}</p>
+        <p className="mt-3 leading-relaxed">{t(d.method === "rules" ? "bio.methodTextRules" : "bio.methodText")}</p>
       </details>
     </>
   );

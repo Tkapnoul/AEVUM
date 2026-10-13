@@ -97,6 +97,7 @@ export interface Thread {
 export interface AppConfig {
   publicUrl: string;
   aiEnabled: boolean;
+  aiProvider: "anthropic" | "free" | null;
   clinicTimeZone: string;
   devices: { kind: string; name: string }[];
 }

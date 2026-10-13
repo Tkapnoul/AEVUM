@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { all, get, run } from "../db.js";
-import { config } from "../config.js";
+import { aiProvider, config } from "../config.js";
+import { completeJson } from "./free.js";
+import { computeReport, engineInput, ENGINE_MODEL } from "../lib/bioengine.js";
 import { anthropic, FALLBACK } from "./client.js";
 import { dailySeries, mean } from "../lib/metrics-store.js";
 import { latestLabs, phenoAgeFor, type PhenoAgeResult } from "../lib/phenoage.js";
@@ -150,9 +152,45 @@ export function buildInput(userId: string) {
   };
 }
 
+const done = (reportId: string, report: BioAgeReport, model: string) =>
+  run("UPDATE bio_age_reports SET status = 'done', result = ?, model = ?, finished_at = ? WHERE id = ?", JSON.stringify(report), model, Date.now(), reportId);
+
+/**
+ * Free provider: the validated rule-based results go in as anchors, the model writes the per-system estimate
+ * and the narrative. If the model's JSON doesn't validate (free models sometimes drift), the rule-based
+ * report is stored instead, so the member always gets a result.
+ */
+async function runFree(reportId: string, userId: string) {
+  const rules = computeReport(engineInput(userId)!);
+  const { input } = buildInput(userId);
+  const anchors = {
+    validated_ages: rules.systems.filter((x) => x.bio_age != null).map((x) => ({ system: x.key, age: x.bio_age, method: x.key === "cardiorespiratory" ? "fitness age from VO2max vs FRIEND registry medians" : "PhenoAge (Levine 2018)" })),
+    rule_based_report: rules,
+  };
+  const report = await completeJson(
+    [
+      { role: "system", content: `${SYSTEM}\n\nThe app has already computed validated ages with fixed formulas (below). Treat them as anchors: copy those system ages unchanged and give them the largest weight in the overall estimate. Return all 7 systems.` },
+      { role: "user", content: `Member data (JSON):\n${JSON.stringify(input)}\n\nApp-computed anchors (JSON):\n${JSON.stringify(anchors)}` },
+    ],
+    "bio_age_report",
+    z.toJSONSchema(BioAgeReport),
+    (x) => {
+      const r = BioAgeReport.safeParse(x);
+      return r.success && r.data.systems.length ? r.data : null;
+    },
+    12000,
+  ).catch((err) => {
+    console.error("[bioage] free provider failed, using rules", err);
+    return null;
+  });
+  if (report) done(reportId, report, config.freeAi!.model);
+  else done(reportId, rules, ENGINE_MODEL);
+}
+
 /** Runs one report to completion and stores the outcome. Never throws. */
 export async function runBioAge(reportId: string, userId: string) {
   try {
+    if (aiProvider === "free") return await runFree(reportId, userId);
     if (!anthropic) throw new Error("ai_not_configured");
     const { input } = buildInput(userId);
     const msg = await anthropic.beta.messages.parse({
@@ -165,10 +203,7 @@ export async function runBioAge(reportId: string, userId: string) {
     });
     if (msg.stop_reason === "refusal") throw new Error("refusal");
     if (msg.stop_reason === "max_tokens" || !msg.parsed_output) throw new Error("incomplete_output");
-    run(
-      "UPDATE bio_age_reports SET status = 'done', result = ?, model = ?, finished_at = ? WHERE id = ?",
-      JSON.stringify(msg.parsed_output), msg.model, Date.now(), reportId,
-    );
+    done(reportId, msg.parsed_output, msg.model);
   } catch (err) {
     console.error("[bioage] failed", err);
     run("UPDATE bio_age_reports SET status = 'error', error = ?, finished_at = ? WHERE id = ?", err instanceof Error ? err.message : "failed", Date.now(), reportId);

@@ -1,6 +1,6 @@
 # VPS deployment with automatic HTTPS (Caddy + Let's Encrypt).
 # 1. Point a domain (e.g. aevum.example.com) to the server's IP.
-# 2. Create .env (see .env.example) with DOMAIN, JWT_SECRET, ANTHROPIC_API_KEY.
+# 2. Create .env (see .env.example) with DOMAIN, JWT_SECRET and optionally GEMINI_API_KEY (free AI).
 # 3. docker compose up -d
 services:
   aevum:

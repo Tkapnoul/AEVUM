@@ -130,11 +130,14 @@ describe("watch pairing & ingest", () => {
 });
 
 describe("AI", () => {
-  it("reports not configured without an API key", async () => {
+  it("without any AI: chat is off, insights and analysis come from the rules", async () => {
     const cookie = await register("i@t.test");
     expect((await call("GET", "/api/ai/status", { cookie })).json.enabled).toBe(false);
     expect((await call("POST", "/api/ai/chat", { cookie, body: { message: "hi" } })).status).toBe(503);
-    expect((await call("GET", "/api/ai/insight", { cookie })).json.text).toBeNull();
+    expect((await call("GET", "/api/ai/insight", { cookie })).json.text).toMatch(/\S/);
+    const items = (await call("GET", "/api/ai/analysis", { cookie })).json.items;
+    expect(items.length).toBeGreaterThan(0);
+    expect(items[0]).toHaveProperty("title");
   });
 });
 

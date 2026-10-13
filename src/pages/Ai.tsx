@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Plus, Sparkles } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Activity, ArrowUp, ChevronRight, HeartPulse, Moon, Plus, Scale, Sparkles, Watch, type LucideIcon } from "lucide-react";
 import { useFetch } from "../lib/useFetch";
 import { useI18n, type MessageKey } from "../lib/i18n";
 import { apiFetch, post } from "../lib/api";
 import type { AppConfig } from "../lib/types";
-import { Card, PageHeader, cx } from "../components/ui";
+import { Card, ErrorState, PageHeader, Spinner, cx } from "../components/ui";
 import { RichText } from "../components/RichText";
 
 interface Msg {
@@ -90,6 +91,7 @@ export function Ai() {
   }
 
   const disabled = config.data && !config.data.aiEnabled;
+  if (disabled) return <Analysis />;
   const suggestions: MessageKey[] = ["ai.suggest.1", "ai.suggest.2", "ai.suggest.3", "ai.suggest.4"];
 
   return (
@@ -183,5 +185,68 @@ export function Ai() {
         <p className="mt-2 text-center text-[11px] text-ink-3">{t("ai.disclaimer")}</p>
       </div>
     </div>
+  );
+}
+
+interface Insight {
+  topic: "sleep" | "recovery" | "activity" | "body" | "bioage" | "data";
+  tone: "good" | "neutral" | "warn";
+  title: string;
+  text: string;
+}
+
+const TOPIC: Record<Insight["topic"], { icon: LucideIcon; to?: string }> = {
+  sleep: { icon: Moon, to: "/data/sleep" },
+  recovery: { icon: HeartPulse, to: "/data" },
+  activity: { icon: Activity, to: "/data" },
+  body: { icon: Scale, to: "/data" },
+  bioage: { icon: Sparkles, to: "/bioage" },
+  data: { icon: Watch, to: "/devices" },
+};
+
+/** Without an API key: rule-based observations from the member's own data instead of the chat. */
+function Analysis() {
+  const { t } = useI18n();
+  const res = useFetch<{ items: Insight[] }>("/ai/analysis");
+  return (
+    <>
+      <PageHeader title={t("ai.analysisTitle")} subtitle={t("ai.analysisSubtitle")} />
+      {res.loading && !res.data ? (
+        <Spinner />
+      ) : res.error || !res.data ? (
+        <ErrorState onRetry={res.reload} />
+      ) : (
+        <div className="space-y-3">
+          {res.data.items.map((it, i) => {
+            const { icon: Icon, to } = TOPIC[it.topic];
+            const body = (
+              <Card className="flex items-start gap-3">
+                <span
+                  className={cx(
+                    "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full",
+                    it.tone === "warn" ? "bg-coral-soft text-coral" : it.tone === "good" ? "bg-sage-soft text-sage" : "bg-surface-2 text-ink-2",
+                  )}
+                >
+                  <Icon className="size-4" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{it.title}</span>
+                  <span className="mt-1 block text-sm leading-relaxed text-ink-2">{it.text}</span>
+                </span>
+                {to && <ChevronRight className="mt-2 size-4 shrink-0 text-ink-3" aria-hidden />}
+              </Card>
+            );
+            return to ? (
+              <Link key={i} to={to} className="block">
+                {body}
+              </Link>
+            ) : (
+              <div key={i}>{body}</div>
+            );
+          })}
+        </div>
+      )}
+      <p className="mt-6 text-center text-[11px] text-ink-3">{t("ai.analysisNote")}</p>
+    </>
   );
 }

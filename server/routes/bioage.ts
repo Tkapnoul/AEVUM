@@ -4,9 +4,10 @@ import { requireUser, type AppEnv } from "../auth.js";
 import { canViewMember } from "../lib/access.js";
 import { newId } from "../lib/ids.js";
 import { HttpError, rateLimit } from "../lib/validate.js";
-import { anthropic } from "../ai/client.js";
+import { aiProvider } from "../config.js";
 import { chronoAge, runBioAge, type BioAgeReport } from "../ai/bioage.js";
 import { phenoAgeFor, PHENOAGE_MARKERS } from "../lib/phenoage.js";
+import { computeReport, engineInput, ENGINE_MODEL } from "../lib/bioengine.js";
 
 export const bioAgeRoutes = new Hono<AppEnv>();
 bioAgeRoutes.use("*", requireUser);
@@ -25,6 +26,7 @@ interface Row {
   phenoage: number | null;
   result: string | null;
   error: string | null;
+  model: string | null;
   created_at: number;
 }
 
@@ -35,6 +37,7 @@ const view = (r: Row) => ({
   phenoAge: r.phenoage,
   report: r.result ? (JSON.parse(r.result) as BioAgeReport) : null,
   error: r.error,
+  method: r.model === ENGINE_MODEL ? ("rules" as const) : ("ai" as const),
   createdAt: r.created_at,
 });
 
@@ -54,7 +57,8 @@ bioAgeRoutes.get("/", (c) => {
     if (years >= 30 / 365) pace = Math.round(((view(b).report!.overall_bio_age - view(a).report!.overall_bio_age) / years) * 100) / 100;
   }
   return c.json({
-    aiEnabled: Boolean(anthropic),
+    aiEnabled: aiProvider != null,
+    method: aiProvider ? "ai" : "rules",
     birthDateMissing: birth == null,
     chronoAge: age == null ? null : Math.round(age * 10) / 10,
     phenoAge: { ...phenoAgeFor(userId, age), required: PHENOAGE_MARKERS },
@@ -67,16 +71,26 @@ bioAgeRoutes.get("/", (c) => {
 
 bioAgeRoutes.post("/", (c) => {
   const userId = c.get("user").id;
-  if (!anthropic) throw new HttpError(503, "ai_not_configured");
   const birth = get<{ birth_date: string | null }>("SELECT birth_date FROM users WHERE id = ?", userId)?.birth_date ?? null;
   const age = chronoAge(birth);
   if (age == null) throw new HttpError(400, "birth_date_required");
   if (get("SELECT 1 FROM bio_age_reports WHERE user_id = ? AND status = 'pending'", userId)) throw new HttpError(409, "already_running");
-  rateLimit(`bioage:${userId}`, 6, 24 * 3600_000);
   const id = newId("bio");
+  const pheno = phenoAgeFor(userId, age).value;
+  if (!aiProvider) {
+    // No AI configured: the rule-based engine is instant and deterministic, so it runs inline.
+    rateLimit(`bioage-rules:${userId}`, 60, 24 * 3600_000);
+    const report = computeReport(engineInput(userId)!);
+    run(
+      "INSERT INTO bio_age_reports (id, user_id, status, chrono_age, phenoage, result, model, created_at, finished_at) VALUES (?, ?, 'done', ?, ?, ?, ?, ?, ?)",
+      id, userId, Math.round(age * 10) / 10, pheno, JSON.stringify(report), ENGINE_MODEL, Date.now(), Date.now(),
+    );
+    return c.json({ id });
+  }
+  rateLimit(`bioage:${userId}`, 6, 24 * 3600_000);
   run(
     "INSERT INTO bio_age_reports (id, user_id, status, chrono_age, phenoage, created_at) VALUES (?, ?, 'pending', ?, ?, ?)",
-    id, userId, Math.round(age * 10) / 10, phenoAgeFor(userId, age).value, Date.now(),
+    id, userId, Math.round(age * 10) / 10, pheno, Date.now(),
   );
   void runBioAge(id, userId); // background; the app polls GET /bioage/:id
   return c.json({ id });
