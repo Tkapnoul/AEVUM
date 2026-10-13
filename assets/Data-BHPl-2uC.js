@@ -1,0 +1,1 @@
+export{t as DataPage}from"./Data-DdrtSvH-.js";

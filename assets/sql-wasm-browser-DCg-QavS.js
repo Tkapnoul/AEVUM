@@ -1,0 +1,1 @@
+var e=`/AEVUM/assets/sql-wasm-browser-DfANybxk.wasm`;export{e as default};
