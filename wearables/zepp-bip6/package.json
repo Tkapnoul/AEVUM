@@ -1,0 +1,15 @@
+{
+  "name": "aevum-zepp-bip6",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AEVUM mini-app for Amazfit Bip 6 (Zepp OS): reads health data on the watch and syncs it to AEVUM through the Zepp phone app.",
+  "scripts": {
+    "dev": "zeus dev",
+    "preview": "zeus preview",
+    "build": "zeus build"
+  },
+  "devDependencies": {
+    "@zeppos/device-types": "^4.0.0",
+    "@zeppos/zml": "^0.0.43"
+  }
+}

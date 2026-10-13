@@ -1,0 +1,101 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/fraunces";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Design tokens. Dark is the brand default; light follows the OS unless the user picks one. */
+:root {
+  --bg: #f6f3ec;
+  --surface: #ffffff;
+  --surface-2: #efeae0;
+  --line: #e2dccf;
+  --ink: #16170f;
+  --ink-2: #5d5a50;
+  --ink-3: #8d887b;
+  --gold: #a8834a;
+  --gold-soft: #f1e6d0;
+  --sage: #4f7d5f;
+  --sage-soft: #e1ece3;
+  --coral: #c0573f;
+  --coral-soft: #f6e1db;
+  --sky: #4a6f9a;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e0f0c;
+    --surface: #17180f;
+    --surface-2: #202118;
+    --line: #2c2d23;
+    --ink: #f0eadc;
+    --ink-2: #b9b3a3;
+    --ink-3: #7e796c;
+    --gold: #c9a86a;
+    --gold-soft: #2e281b;
+    --sage: #8fb39a;
+    --sage-soft: #1d2a21;
+    --coral: #e08a73;
+    --coral-soft: #3a211b;
+    --sky: #8db0d8;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e0f0c;
+  --surface: #17180f;
+  --surface-2: #202118;
+  --line: #2c2d23;
+  --ink: #f0eadc;
+  --ink-2: #b9b3a3;
+  --ink-3: #7e796c;
+  --gold: #c9a86a;
+  --gold-soft: #2e281b;
+  --sage: #8fb39a;
+  --sage-soft: #1d2a21;
+  --coral: #e08a73;
+  --coral-soft: #3a211b;
+  --sky: #8db0d8;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-sage: var(--sage);
+  --color-sage-soft: var(--sage-soft);
+  --color-coral: var(--coral);
+  --color-coral-soft: var(--coral-soft);
+  --color-sky: var(--sky);
+  --font-sans: "Inter Variable", system-ui, sans-serif;
+  --font-display: "Fraunces Variable", Georgia, serif;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+body {
+  min-height: 100dvh;
+}
+.pt-safe { padding-top: max(env(safe-area-inset-top), 0.75rem); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.tabular { font-variant-numeric: tabular-nums; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

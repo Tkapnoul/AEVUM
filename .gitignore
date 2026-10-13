@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-server
+data/*.db
+data/*.db-*
+.env
+*.log
+wearables/zepp-bip6/node_modules
+wearables/zepp-bip6/dist
