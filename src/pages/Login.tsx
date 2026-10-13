@@ -81,7 +81,18 @@ export function Login() {
       </div>
       <p className="text-center text-sm text-ink-2">
         {t("auth.noAccount")}{" "}
-        <Link to="/register" className="font-medium text-gold">
+        <Link
+          to="/register"
+          className="font-medium text-gold"
+          onClick={async (e) => {
+            // In the app, registration needs to know which server to create the account on.
+            if (!isNative) return;
+            e.preventDefault();
+            if (!server.trim()) return setError(t("auth.serverHint"));
+            await setServer(server);
+            nav("/register");
+          }}
+        >
           {t("auth.register")}
         </Link>
       </p>
