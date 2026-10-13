@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { post, api, ApiError } from "../lib/api";
-import { getServer, isLocal, isNative, LOCAL, setServer, setToken, usesToken } from "../lib/native";
+import { getServer, isLocal, isNative, LOCAL, localOnly, setServer, setToken, usesToken } from "../lib/native";
 import { useI18n } from "../lib/i18n";
 import { useSession } from "../lib/session";
 import { Button, Field } from "../components/ui";
@@ -51,7 +51,7 @@ export function Login() {
         <Brand />
         <p className="mt-3 font-display text-2xl leading-snug text-ink-2">{company.tagline[locale]}</p>
         <form onSubmit={submit} className="mt-10 space-y-4">
-          {isNative && (
+          {isNative && !localOnly && (
             <div role="radiogroup" aria-label={t("auth.where")} className="grid grid-cols-2 gap-1 rounded-2xl border border-line bg-surface p-1 text-sm">
               {(["local", "server"] as const).map((m) => (
                 <button

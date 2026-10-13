@@ -15,9 +15,9 @@ export const LOCAL = "local";
 
 // Local mode can also be switched on in a desktop browser (localStorage "aevum_local" = "1"), which is how
 // it is exercised in automated browser tests; real users get it in the phone app.
-// The GitHub Pages build (VITE_LOCAL_ONLY=1) is local-only: an iPhone home-screen app with no server.
-const webLocal =
-  !isNative && (import.meta.env.VITE_LOCAL_ONLY === "1" || (typeof localStorage !== "undefined" && localStorage.getItem("aevum_local") === "1"));
+// Builds made with VITE_LOCAL_ONLY=1 (GitHub Pages, the iPhone app) are local-only: no server to choose.
+export const localOnly = import.meta.env.VITE_LOCAL_ONLY === "1";
+const webLocal = !isNative && (localOnly || (typeof localStorage !== "undefined" && localStorage.getItem("aevum_local") === "1"));
 
 export async function loadNativeState() {
   if (webLocal) {
@@ -27,7 +27,9 @@ export async function loadNativeState() {
   }
   if (!isNative) return;
   // With no server chosen, the app starts in local mode so it works straight after install.
-  serverUrl = (await Preferences.get({ key: "server" })).value || (import.meta.env.VITE_DEFAULT_SERVER as string | undefined) || LOCAL;
+  serverUrl = localOnly
+    ? LOCAL
+    : (await Preferences.get({ key: "server" })).value || (import.meta.env.VITE_DEFAULT_SERVER as string | undefined) || LOCAL;
   token = (await Preferences.get({ key: "token" })).value;
 }
 

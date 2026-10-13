@@ -1,0 +1,79 @@
+name: iPhone app
+
+# Builds the AEVUM iPhone app (local-only: everything, including the data, stays on the phone) as an
+# unsigned .ipa and publishes it as the "ios-latest" release. Apple only installs signed apps, so the
+# .ipa is signed on the user's side with their own free Apple ID by Sideloadly or AltStore (see docs/odigos.md).
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths-ignore: ["**.md", "docs/**", "wearables/**", "android/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Build web app (local-only)
+        run: npx vite build
+        env:
+          VITE_LOCAL_ONLY: "1"
+
+      - run: npx cap sync ios
+
+      - name: Use the newest Xcode on the runner
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Build (unsigned)
+        working-directory: ios/App
+        run: |
+          xcodebuild -list -project App.xcodeproj
+          xcodebuild build -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
+      # Ad-hoc signature that carries the HealthKit entitlement, so the signing tool on the user's side
+      # asks Apple for it when it re-signs the app with their Apple ID.
+      - name: Package .ipa
+        run: |
+          APP="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/App.app"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          OUT="$RUNNER_TEMP/ipa/Payload/App.app"
+          if [ -d "$OUT/Frameworks" ]; then
+            find "$OUT/Frameworks" -maxdepth 1 \( -name "*.framework" -o -name "*.dylib" \) -exec codesign --force --sign - {} \;
+          fi
+          codesign --force --sign - --entitlements ios/App/App/App.entitlements "$OUT"
+          codesign -d --entitlements - "$OUT"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/aevum.ipa" Payload)
+          ls -l aevum.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aevum-ios
+          path: aevum.ipa
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ios-latest --yes --cleanup-tag || true
+          gh release create ios-latest aevum.ipa --title "AEVUM iPhone (latest)" --target "$GITHUB_SHA" \
+            --notes "Install with Sideloadly (Windows/Mac) or AltStore using your Apple ID. Everything runs and is stored on the phone. With a free Apple ID the app must be refreshed every 7 days."
