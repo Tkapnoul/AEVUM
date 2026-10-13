@@ -7,6 +7,7 @@ import { newId } from "./lib/ids.js";
 import { upsertMetrics, upsertSleep, type MetricInput } from "./lib/metrics-store.js";
 import { DAY_MS, isoDate, startOfUtcDay } from "./lib/time.js";
 import { openSlots } from "./lib/slots.js";
+import { matchLabKey } from "../shared/labs.js";
 
 if (config.isProd) throw new Error("Refusing to seed in production");
 
@@ -75,6 +76,8 @@ async function main() {
     items.push({ type: "distance", ts: day, value: Math.round((6500 + progress * 2500) * 0.75 + noise(900)) });
     items.push({ type: "resting_hr", ts: day, value: Math.round(64 - progress * 4 + noise(2)) });
     items.push({ type: "pai", ts: day, value: Math.round(55 + progress * 40 + noise(10)) });
+    items.push({ type: "hrv", ts: day + 4 * 3600_000, value: Math.round(38 + progress * 9 + noise(6)) });
+    if (d % 7 === 0) items.push({ type: "vo2max", ts: day + 18 * 3600_000, value: Math.round((41 + progress * 3 + noise(0.8)) * 10) / 10 });
     for (let h = 0; h < 24; h++) {
       const t = day + h * 3600_000;
       const awake = h >= 7 && h <= 23;
@@ -117,6 +120,14 @@ async function main() {
   // Labs entered by the doctor.
   const labDate = today - 21 * DAY_MS;
   const labs: [string, number, string, number | null, number | null][] = [
+    ["Λευκωματίνη", 4.6, "g/dL", 3.5, 5.2],
+    ["Κρεατινίνη", 0.95, "mg/dL", 0.7, 1.3],
+    ["Γλυκόζη", 92, "mg/dL", 70, 110],
+    ["Λεμφοκύτταρα %", 32, "%", 20, 45],
+    ["MCV", 89, "fL", 80, 98],
+    ["RDW", 12.8, "%", 11.5, 14.5],
+    ["ALP", 68, "U/L", 40, 129],
+    ["WBC", 5.8, "10³/µL", 4, 10.5],
     ["HbA1c", 5.4, "%", 4.0, 5.6],
     ["LDL-C", 138, "mg/dL", null, 130],
     ["HDL-C", 52, "mg/dL", 40, null],
@@ -128,8 +139,8 @@ async function main() {
   ];
   for (const [marker, value, unit, lo, hi] of labs) {
     run(
-      "INSERT INTO labs (id, user_id, marker, value, unit, ref_low, ref_high, taken_at, entered_by, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')",
-      newId("lab"), memberId, marker, value, unit, lo, hi, labDate, expertIds.doctor,
+      "INSERT INTO labs (id, user_id, marker, marker_key, value, unit, ref_low, ref_high, taken_at, entered_by, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')",
+      newId("lab"), memberId, marker, matchLabKey(marker), value, unit, lo, hi, labDate, expertIds.doctor,
     );
   }
 

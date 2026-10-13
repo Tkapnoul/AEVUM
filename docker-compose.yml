@@ -1,0 +1,25 @@
+# VPS deployment with automatic HTTPS (Caddy + Let's Encrypt).
+# 1. Point a domain (e.g. aevum.example.com) to the server's IP.
+# 2. Create .env (see .env.example) with DOMAIN, JWT_SECRET, ANTHROPIC_API_KEY.
+# 3. docker compose up -d
+services:
+  aevum:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PUBLIC_URL: https://${DOMAIN}
+    volumes:
+      - aevum-data:/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    command: caddy reverse-proxy --from ${DOMAIN} --to aevum:8787
+    volumes:
+      - caddy-data:/data
+
+volumes:
+  aevum-data:
+  caddy-data:

@@ -1,81 +1,79 @@
 # AEVUM
 
-Member app for a longevity / preventive-health membership. Each member:
+Health and longevity app for a small group (you and your friends). Each member:
 
-- sees their own health data (AEVUM Score, sleep, resting heart rate, stress, SpO₂, steps, PAI, weight, lab results),
-- books and joins **1-1 video sessions** with their coaches, doctors, nutritionists and physiotherapists, and messages them,
-- connects their **Amazfit Bip 6** so data syncs automatically (more devices later),
-- talks to **AEVUM AI**, a built-in assistant (Claude) that reads their data through tools and helps them act on it,
-- installs it on their phone as an app (PWA: home-screen icon, full screen, offline shell).
+- sees their own data: AEVUM Score, sleep, resting HR, HRV, VO₂max, SpO₂, steps, blood pressure, glucose, weight, lab results,
+- gets an **AI biological age** (overall and per body system) and **PhenoAge** from blood tests,
+- connects **any watch or ring** (via Apple Health / Health Connect, plus a direct Amazfit Bip 6 app),
+- books and joins **1-1 video sessions** with whoever in the group is coach / doctor / nutritionist / physio, and messages them,
+- chats with **AEVUM AI** (Claude), which reads their data through tools,
+- runs as a real phone app: native Android/iOS (Capacitor) or an installable PWA.
 
-Experts (coach / doctor / nutritionist / physio) log in to the same app and get a portal: today's sessions, their members' data, session notes, lab entry (doctors), messages and weekly availability.
+Greek and English UI. **Greek step-by-step setup guide: [docs/odigos.md](docs/odigos.md).**
 
-Greek and English UI; Greek is the default.
+## Getting data in, for every watch
 
-> **Company content:** the brand-specific parts (plans, pillars, goals, copy) live in [`shared/company.ts`](shared/company.ts). The company site could not be read from the build environment, so those values are a neutral baseline and need to be aligned with the real offering.
+| Phone | Best option | What it covers |
+| --- | --- | --- |
+| Android | **AEVUM Android app** (APK built by GitHub Actions) → Health Connect | Samsung, Pixel/Fitbit, Garmin, Amazfit/Zepp, Oura, Whoop, Withings, Polar, Coros, Xiaomi… anything that writes to Health Connect |
+| iPhone | **AEVUM iOS app** (build in Xcode on a Mac) → Apple Health | Apple Watch and every watch whose app writes to Apple Health |
+| iPhone, no Mac | **Health Auto Export** app → `/api/device/ingest/hae` (automatic, hourly) | everything in Apple Health |
+| iPhone, nothing installed | **Apple Health export.zip** import (in the app, processed on the phone) | last 12 months, one-off / occasional |
+| Amazfit Bip 6 | Zepp OS mini-app in [`wearables/zepp-bip6`](wearables/zepp-bip6), or Zepp → Apple Health / Health Connect | Bip 6 |
+| Anything else | JSON API with a token ([docs/api-ingest.md](docs/api-ingest.md)) | iOS Shortcuts, Tasker, scripts |
 
-## Stack
+The native app syncs every time it is opened (at most every 30 min) and on demand; the first sync pulls 90 days.
+Huawei watches are the main gap: Huawei Health does not write to Health Connect.
 
-| Part | Tech |
-| --- | --- |
-| App (PWA) | React 19, React Router, Tailwind CSS 4, Recharts, vite-plugin-pwa (Workbox) |
-| API | Hono on Node ≥ 22.13, `node:sqlite` (no native deps), zod, JWT cookie sessions |
-| AI | Anthropic SDK, `claude-opus-5-5`, streaming + tool use, server-side refusal fallback |
-| Watch | Zepp OS mini-app (API level 3.0+) in [`wearables/zepp-bip6`](wearables/zepp-bip6) |
+## Biological age
+
+- **PhenoAge** (Levine et al., 2018): computed exactly from age + 9 blood markers (albumin, creatinine, glucose, CRP, lymphocyte %, MCV, RDW, ALP, WBC), converted from whatever units the lab used. Shown when all 9 are available from draws ≤ 4 months apart.
+- **AI report**: Claude (`claude-opus-5-5`, effort high, schema-validated structured output) estimates an equivalent age for seven systems (cardiorespiratory fitness, cardiovascular, metabolic, body composition, sleep & recovery, blood & inflammation, activity) from 90 days of data against age/sex norms, weights them into an overall biological age with a confidence level, and lists drivers, 3–5 concrete recommendations and data gaps. PhenoAge is the anchor for the blood system. Runs in the background (1–2 min); history and pace of ageing are tracked.
+- **Lab results from a photo/PDF**: the AI reads the report (Greek or English), maps tests to the catalogue, and the member reviews before saving.
+
+It is an estimate for motivation and guidance, not a diagnosis; accuracy rises with VO₂max, HRV and recent blood work.
 
 ## Run it
 
 ```bash
 npm install
-cp .env.example .env          # set JWT_SECRET; add ANTHROPIC_API_KEY to enable AI
-npm run seed                  # demo care team + a demo member with 60 days of synthetic data
-npm run dev                   # API on :8787, app on http://localhost:5173
+cp .env.example .env     # set JWT_SECRET and ANTHROPIC_API_KEY
+npm run dev              # API :8787, app http://localhost:5173
+npm run seed             # optional: demo care team + demo member with synthetic data
 ```
 
-Demo logins (password `aevum-demo-2026`): `demo@aevum.test` (member), `coach@aevum.test`, `doctor@aevum.test`, `nutrition@aevum.test`, `physio@aevum.test`.
-Demo data is generated, stored with source `demo`, and must never be seeded in production (the script refuses when `NODE_ENV=production`).
+The **first account registered becomes admin** (Profile → Manage users) and can make friends coaches, doctors, etc.; experts join every member's care team and get Mon–Fri 09–17 availability they can edit.
 
 ```bash
-npm test          # API, booking, pairing/ingest, AI tool loop (mock API), watch payload contract
-npm run typecheck
-npm run build && npm start    # production: one Node process serves the API and the built app
+npm test && npm run typecheck
+npm run build && npm start
 ```
 
-## Deploying
+## Deploy (needs HTTPS so phones can reach it)
 
-Any host that runs a long-lived Node process with a persistent disk works (Fly.io, Render, Railway, a VPS). Requirements:
+- **VPS + Docker** (recommended): `docker compose up -d` with `DOMAIN`, `JWT_SECRET`, `ANTHROPIC_API_KEY` in `.env`; Caddy gets the certificate automatically.
+- **Home computer**: run `npm start` and expose port 8787 with Tailscale Funnel (`tailscale funnel 8787`) or a Cloudflare Tunnel for a stable HTTPS address.
+- SQLite file at `DATABASE_PATH`; back it up.
+- `VIDEO_BASE_URL`: rooms open in the browser/Jitsi app. `meet.jit.si` works but may ask the first participant to sign in; a self-hosted Jitsi avoids that.
 
-- **HTTPS** — required for PWA install, secure cookies, and for the watch's phone-side service to reach the API.
-- `NODE_ENV=production`, `JWT_SECRET`, `PUBLIC_URL`, `DATABASE_PATH` on the persistent volume, `ANTHROPIC_API_KEY`.
-- `VIDEO_BASE_URL`: `meet.jit.si` is fine for testing, but for production use your own Jitsi server or JaaS (8x8) so rooms, recording policy and data residency are under your control. Calls open in a new tab.
-- SQLite is right for one instance. Moving to Postgres later only touches `server/db.ts` and the SQL in the routes.
+## Native apps
 
-## How it fits together
-
-```
-Amazfit Bip 6 ──BLE──▶ Zepp app (phone) ──HTTPS──▶ AEVUM API ◀── AEVUM PWA (member / expert)
-  watch page reads      side service adds the        /api/device/ingest/zepp          │
-  on-device sensors     device token                                                  ▼
-                                                                              Claude (AEVUM AI)
+```bash
+npm run build:web && npx cap sync      # copy the built app into android/ and ios/
 ```
 
-- **Pairing:** the member taps *Profile › Devices › Amazfit Bip 6 › Create code* (6 characters, 15 min, single use) and types it into the AEVUM settings page inside the Zepp app. The phone-side service exchanges it for a device token (stored hashed on the server). Re-pairing or *Disconnect* revokes the old token.
-- **Sync:** opening AEVUM on the watch reads today's steps, calories, distance, resting HR, PAI, 5-minute heart rate, hourly stress, SpO₂ and last night's sleep (with stages), and sends them through the phone. Uploads are idempotent (upserts keyed by user, metric, timestamp and source).
-- **AEVUM Score:** 0–100, last 7 days vs the member's own 30-day baseline across sleep, recovery (resting HR), movement (steps) and stress. Shown only with ≥ 2 signals and ≥ 3 days of data. It is a coaching index, not a diagnosis.
-- **AI:** each conversation starts with a frozen snapshot of the member (profile, goals, 7/30-day averages, care team, upcoming sessions). Claude fetches detail through read-only tools (`get_metric_history`, `get_sleep_history`, `get_lab_results`, `find_session_slots`, `list_sessions`). The system prompt forbids diagnosis and medication advice, sends emergencies to 112, and points members to their care team. History is stored and replayed append-only; a new conversation starts after 6 h idle or 80 turns. The daily insight on *Today* is generated once per member per day.
-- **Access control:** members see only their own data; experts see a member's data only when they are on that member's care team or have a booking with them; only doctors (and the member) can add lab results; messaging is open only between linked member–expert pairs.
-- **Privacy:** data export (JSON) and account deletion are in *Profile*. Offline-cached data is wiped on logout.
+- **Android**: GitHub Actions (`.github/workflows/android.yml`) builds `aevum.apk` on every push (Artifacts) and, when run manually with *publish*, as the `android-latest` release. Set the repository variable `AEVUM_SERVER_URL` to pre-fill the server address. For in-place updates add a signing key as secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`; create with `keytool -genkeypair -v -keystore aevum.jks -keyalg RSA -keysize 2048 -validity 10000 -alias aevum`).
+- **iOS**: on a Mac with Xcode, `npx cap open ios`, choose your Team under *Signing & Capabilities* (a free Apple ID works for your own phone; apps signed that way expire after 7 days, a paid developer account lets you share via TestFlight). HealthKit entitlement and usage texts are already set.
 
-## Adding more watches
+## Stack
 
-`devices.kind` and the ingest payload are device-agnostic. The realistic next step is a **Capacitor** wrapper of this PWA so it can read **Apple HealthKit** and **Android Health Connect**: almost every watch (Garmin, Fitbit, Samsung, Oura, and Zepp itself) writes to one of those. That adds every major watch through one integration instead of one per vendor. Direct vendor APIs (Garmin Health API, Oura API, Withings) are the alternative where a cloud sync is preferred.
-
-## Project layout
+React 19 + Tailwind 4 + Recharts (PWA via vite-plugin-pwa) · Capacitor 8 + `@capgo/capacitor-health` · Hono on Node ≥ 22.13 with `node:sqlite` · Anthropic SDK (streaming chat with tools, structured outputs, server-side refusal fallback) · Zepp OS mini-app.
 
 ```
-server/            API (routes/, ai/, lib/), SQLite schema in db.ts, seed.ts
-src/               PWA: pages/ (member), pages/expert/, components/, lib/ (api, i18n, session)
-shared/            types and metric catalogue shared by API and app; company.ts (brand/business config)
-wearables/zepp-bip6/  Zepp OS mini-app for the Bip 6
-tests/             vitest suites
+server/   API: routes/, ai/ (chat, bio age, prompts, tools), lib/ (ingest, HAE parser, PhenoAge, score, slots)
+src/      app: pages/, components/, lib/ (healthSync, appleExport, sleepNights, native, i18n)
+shared/   metric + lab catalogues, company config
+android/ ios/  Capacitor projects
+wearables/zepp-bip6/  Zepp OS mini-app
+tests/    vitest (API, parsers, PhenoAge, AI flows against a mock API)
 ```

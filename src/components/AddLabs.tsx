@@ -175,7 +175,7 @@ export function AddLabs({ member, onSaved }: { member?: string; onSaved: () => v
         })}
       </div>
       <button className="mt-3 inline-flex items-center gap-1 text-sm text-gold" onClick={() => setRows((rs) => [...rs!, emptyRow()])}>
-        <Plus className="size-4" aria-hidden /> {t("labs.add")}
+        <Plus className="size-4" aria-hidden /> {t("labs.addRow")}
       </button>
       {error && <p className="mt-3 text-sm text-coral">{error}</p>}
       <div className="mt-4 flex gap-2">

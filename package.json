@@ -13,7 +13,9 @@
     "start": "NODE_ENV=production node --env-file-if-exists=.env dist-server/server/index.js",
     "seed": "tsx --env-file-if-exists=.env server/seed.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:web": "vite build",
+    "cap:sync": "vite build && cap sync"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

@@ -17,3 +17,15 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image and smoke-test it
+        run: |
+          docker build -t aevum .
+          docker run -d --name aevum -e JWT_SECRET=ci-secret-0123456789abcdef -p 8787:8787 aevum
+          for i in $(seq 1 30); do curl -fs localhost:8787/api/health && break; sleep 1; done
+          curl -fs localhost:8787/ | grep -q '<div id="root">'
+          docker logs aevum
