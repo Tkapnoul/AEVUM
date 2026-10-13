@@ -5,6 +5,7 @@ import { useI18n, type MessageKey } from "../lib/i18n";
 import { useSession } from "../lib/session";
 import { EXPERT_ROLES } from "../../shared/metrics";
 import { cx } from "./ui";
+import { isLocal } from "../lib/native";
 
 const MEMBER_TABS: { to: string; label: MessageKey; icon: typeof House }[] = [
   { to: "/", label: "nav.today", icon: House },
@@ -40,7 +41,8 @@ export function AppShell() {
   const { t } = useI18n();
   const { me } = useSession();
   const online = useOnline();
-  const tabs = me && EXPERT_ROLES.includes(me.role) ? EXPERT_TABS : MEMBER_TABS;
+  // On-phone only (local mode) there is no care team to talk to.
+  const tabs = me && EXPERT_ROLES.includes(me.role) ? EXPERT_TABS : isLocal() ? MEMBER_TABS.filter((x) => x.to !== "/care") : MEMBER_TABS;
   return (
     <div className="mx-auto flex min-h-dvh max-w-xl flex-col">
       {!online && <div className="bg-gold-soft px-4 py-2 text-center text-xs text-gold">{t("common.offline")}</div>}

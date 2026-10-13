@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Check } from "lucide-react";
 import { post, ApiError } from "../lib/api";
-import { getServer, isNative, setToken } from "../lib/native";
+import { getServer, isNative, setToken, usesToken } from "../lib/native";
 import { useI18n } from "../lib/i18n";
 import { useSession } from "../lib/session";
 import { Button, Field, cx } from "../components/ui";
@@ -36,9 +36,9 @@ export function Register() {
         sex: f.sex || undefined,
         heightCm: f.heightCm ? Number(f.heightCm) : undefined,
         goals: f.goals,
-        client: isNative ? "native" : "web",
+        client: usesToken() ? "native" : "web",
       });
-      if (isNative && res.token) await setToken(res.token);
+      if (usesToken() && res.token) await setToken(res.token);
       await refresh();
       nav("/", { replace: true });
     } catch (err) {

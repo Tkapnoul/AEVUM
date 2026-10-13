@@ -34,7 +34,9 @@ export class FreeAiError extends Error {
 async function post(body: object): Promise<Response> {
   const cfg = config.freeAi;
   if (!cfg) throw new Error("free_ai_not_configured");
-  const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+  // Inside the phone app (local mode) the runtime may supply a fetch that can fall back to native HTTP.
+  const doFetch = (Reflect.get(globalThis, "__aevumFetch") as typeof fetch | undefined) ?? fetch;
+  const res = await doFetch(`${cfg.baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}) },
     body: JSON.stringify({ model: cfg.model, ...body }),

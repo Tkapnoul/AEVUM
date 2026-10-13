@@ -1,4 +1,6 @@
-const env = process.env;
+// Read through globalThis: bundlers replace a literal `process.env` at build time, which would freeze the
+// configuration when this file runs inside the phone app (local mode sets globalThis.process at start).
+const env: Record<string, string | undefined> = (Reflect.get(globalThis, "process") as { env?: Record<string, string | undefined> } | undefined)?.env ?? {};
 
 const isProd = env.NODE_ENV === "production";
 
@@ -14,6 +16,8 @@ export const config = {
   databasePath: env.DATABASE_PATH ?? "./data/aevum.db",
   videoBaseUrl: (env.VIDEO_BASE_URL ?? "https://meet.jit.si").replace(/\/$/, ""),
   clinicTimeZone: env.CLINIC_TIME_ZONE ?? "Europe/Athens",
+  /** Running inside the phone app (local mode): one person, no shared server. */
+  local: env.AEVUM_LOCAL === "1",
   ai: {
     enabled: Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN),
     model: env.AEVUM_AI_MODEL ?? "claude-opus-5-5",

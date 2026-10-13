@@ -20,7 +20,8 @@ export interface SessionUser {
 
 export type AppEnv = { Variables: { user: SessionUser } };
 
-export const hashPassword = (pw: string) => bcrypt.hash(pw, 12);
+// Inside the phone app bcrypt runs in JavaScript on a phone CPU; cost 10 keeps login around a second.
+export const hashPassword = (pw: string) => bcrypt.hash(pw, config.local ? 10 : 12);
 export const verifyPassword = (pw: string, hash: string) => bcrypt.compare(pw, hash);
 
 const signSession = (userId: string) =>

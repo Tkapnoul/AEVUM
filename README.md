@@ -11,6 +11,8 @@ Health and longevity app for a small group (you and your friends). Each member:
 
 Greek and English UI. **Greek step-by-step setup guide: [docs/odigos.md](docs/odigos.md).**
 
+
+**Local mode (no server):** the Android/iOS app can run the whole API inside the phone. The same Hono app is bundled into the app, with `node:sqlite` swapped for SQLite compiled to WebAssembly (sql.js) through Vite aliases (`src/local/shims/`); the database lives in IndexedDB and is written before each write request returns. It is the default when no server is configured. A free Gemini key can be entered in the app for AI. Shared features (care team, sessions, messages) need a server.
 ## Getting data in, for every watch
 
 | Phone | Best option | What it covers |

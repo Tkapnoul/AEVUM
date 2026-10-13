@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, Download, LogOut, Shield, Smartphone, Watch } from "lucide-react";
+import { ChevronRight, Download, LogOut, Shield, Smartphone, Sparkles, Watch } from "lucide-react";
 import { useFetch } from "../lib/useFetch";
 import { useI18n } from "../lib/i18n";
 import { useSession } from "../lib/session";
@@ -9,7 +9,7 @@ import { applyTheme, getTheme, type ThemePref } from "../lib/theme";
 import { useInstall } from "../lib/install";
 import { timeAgo } from "../lib/format";
 import type { Device } from "../lib/types";
-import { isNative } from "../lib/native";
+import { isLocal, isNative, openExternal } from "../lib/native";
 import { Avatar, Button, Card, PageHeader, SectionTitle, Segmented } from "../components/ui";
 import { company, type Locale } from "../../shared/company";
 
@@ -86,6 +86,13 @@ export function Profile({ onLocale }: { onLocale: (l: Locale) => void }) {
             <ChevronRight className="size-5 text-ink-3" aria-hidden />
           </Card>
         </Link>
+      )}
+
+      {isLocal() && (
+        <>
+          <SectionTitle>{t("profile.ai")}</SectionTitle>
+          <LocalAiKey />
+        </>
       )}
 
       {!isNative && <SectionTitle>{t("profile.install")}</SectionTitle>}
@@ -246,6 +253,56 @@ function DetailsForm() {
           {saved ? t("common.saved") : t("common.save")}
         </Button>
       </form>
+    </Card>
+  );
+}
+
+/** Local mode: the free Gemini key lives on this phone and the in-app API reads it at start. */
+function LocalAiKey() {
+  const { t } = useI18n();
+  const [key, setKey] = useState("");
+  const [saved, setSaved] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void import("../local/runtime").then(async (m) => {
+      const k = await m.getGeminiKey();
+      setSaved(k);
+      setKey(k);
+    });
+  }, []);
+  async function save() {
+    setBusy(true);
+    const m = await import("../local/runtime");
+    await m.setGeminiKey(key);
+    await m.saveNow();
+    window.location.reload(); // the in-app API reads its configuration once at start
+  }
+  return (
+    <Card className="text-sm">
+      <div className="flex items-start gap-3">
+        <Sparkles className="mt-0.5 size-5 shrink-0 text-gold" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className="text-ink-2">{saved ? t("profile.aiOn") : t("profile.aiHint")}</p>
+          <input
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="AIza…"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-label={t("profile.aiKey")}
+            className="mt-3 h-11 w-full rounded-2xl border border-line bg-surface px-3 font-mono text-[14px]"
+          />
+          <div className="mt-3 flex gap-2">
+            <Button size="sm" loading={busy} disabled={saved === null || key.trim() === (saved ?? "")} onClick={save}>
+              {t("common.save")}
+            </Button>
+            <button type="button" onClick={() => void openExternal("https://aistudio.google.com/apikey")} className="inline-flex items-center px-2 text-gold">
+              {t("profile.aiGet")}
+            </button>
+          </div>
+        </div>
+      </div>
     </Card>
   );
 }

@@ -4,7 +4,7 @@ import { Activity, Apple, Check, ChevronRight, Copy, FileArchive, Smartphone, Wa
 import { useFetch } from "../lib/useFetch";
 import { useI18n } from "../lib/i18n";
 import { post } from "../lib/api";
-import { getServer, isNative, platform } from "../lib/native";
+import { getServer, isLocal, isNative, platform } from "../lib/native";
 import { timeAgo } from "../lib/format";
 import type { Device } from "../lib/types";
 import { Button, Card, PageHeader, SectionTitle } from "../components/ui";
@@ -54,7 +54,8 @@ export function Devices() {
         <>
           <SectionTitle>iPhone</SectionTitle>
           <div className="space-y-3">
-            <TokenCard
+            {/* Health Auto Export, the Zepp mini-app and the API push to a server address: not possible in local mode. */}
+            {!isLocal() && <TokenCard
               kind="health_auto_export"
               icon={<Apple className="size-5" aria-hidden />}
               title={t("devices.hae.title")}
@@ -62,33 +63,39 @@ export function Devices() {
               path="/api/device/ingest/hae"
               extra={t("devices.hae.settings")}
               status={syncedLabel(byKind("health_auto_export"))}
-            />
+            />}
             <ExportImport status={syncedLabel(byKind("apple_health_export"))} onDone={devices.reload} />
           </div>
         </>
       )}
 
-      <SectionTitle>{t("devices.zepp")}</SectionTitle>
-      <Link to="/devices/bip6">
-        <Card className="flex items-center gap-4 p-4">
-          <Watch className="size-5 text-gold" aria-hidden />
-          <div className="flex-1">
-            <p className="font-medium">Amazfit Bip 6</p>
-            <p className="text-xs text-ink-3">{syncedLabel(byKind("amazfit_bip6")) ?? t("devices.zeppHint")}</p>
-          </div>
-          <ChevronRight className="size-5 text-ink-3" aria-hidden />
-        </Card>
-      </Link>
+      {isLocal() ? (
+        <p className="mt-6 text-sm text-ink-3">{t("devices.localNote")}</p>
+      ) : (
+        <>
+          <SectionTitle>{t("devices.zepp")}</SectionTitle>
+          <Link to="/devices/bip6">
+            <Card className="flex items-center gap-4 p-4">
+              <Watch className="size-5 text-gold" aria-hidden />
+              <div className="flex-1">
+                <p className="font-medium">Amazfit Bip 6</p>
+                <p className="text-xs text-ink-3">{syncedLabel(byKind("amazfit_bip6")) ?? t("devices.zeppHint")}</p>
+              </div>
+              <ChevronRight className="size-5 text-ink-3" aria-hidden />
+            </Card>
+          </Link>
 
-      <SectionTitle>API</SectionTitle>
-      <TokenCard
-        kind="api"
-        icon={<Webhook className="size-5" aria-hidden />}
-        title={t("devices.api.title")}
-        body={t("devices.api.body")}
-        path="/api/device/ingest/generic"
-        status={syncedLabel(byKind("api"))}
-      />
+          <SectionTitle>API</SectionTitle>
+          <TokenCard
+            kind="api"
+            icon={<Webhook className="size-5" aria-hidden />}
+            title={t("devices.api.title")}
+            body={t("devices.api.body")}
+            path="/api/device/ingest/generic"
+            status={syncedLabel(byKind("api"))}
+          />
+        </>
+      )}
     </>
   );
 }

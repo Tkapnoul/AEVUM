@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { post, api, ApiError } from "../lib/api";
-import { getServer, isNative, setServer, setToken } from "../lib/native";
+import { getServer, isLocal, isNative, LOCAL, setServer, setToken, usesToken } from "../lib/native";
 import { useI18n } from "../lib/i18n";
 import { useSession } from "../lib/session";
 import { Button, Field } from "../components/ui";
@@ -12,7 +12,9 @@ export function Login() {
   const { t, locale } = useI18n();
   const { refresh } = useSession();
   const nav = useNavigate();
-  const [server, setServerInput] = useState(getServer());
+  // In the app: everything on this phone (no server needed), or an AEVUM server shared with friends.
+  const [mode, setMode] = useState<"local" | "server">(isLocal() ? "local" : "server");
+  const [server, setServerInput] = useState(isLocal() ? "" : getServer());
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -24,13 +26,14 @@ export function Login() {
     setError(null);
     try {
       if (isNative) {
-        await setServer(server);
-        await api("/health").catch(() => {
-          throw new ApiError(0, "server");
-        });
+        await setServer(mode === "local" ? LOCAL : server);
+        if (mode === "server")
+          await api("/health").catch(() => {
+            throw new ApiError(0, "server");
+          });
       }
-      const res = await post<{ token?: string }>("/auth/login", { email, password, client: isNative ? "native" : "web" });
-      if (isNative && res.token) await setToken(res.token);
+      const res = await post<{ token?: string }>("/auth/login", { email, password, client: usesToken() ? "native" : "web" });
+      if (usesToken() && res.token) await setToken(res.token);
       await refresh();
       nav("/", { replace: true });
     } catch (err) {
@@ -49,6 +52,23 @@ export function Login() {
         <p className="mt-3 font-display text-2xl leading-snug text-ink-2">{company.tagline[locale]}</p>
         <form onSubmit={submit} className="mt-10 space-y-4">
           {isNative && (
+            <div role="radiogroup" aria-label={t("auth.where")} className="grid grid-cols-2 gap-1 rounded-2xl border border-line bg-surface p-1 text-sm">
+              {(["local", "server"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="radio"
+                  aria-checked={mode === m}
+                  onClick={() => setMode(m)}
+                  className={mode === m ? "rounded-xl bg-surface-2 py-2 font-medium text-ink" : "rounded-xl py-2 text-ink-2"}
+                >
+                  {t(m === "local" ? "auth.modeLocal" : "auth.modeServer")}
+                </button>
+              ))}
+            </div>
+          )}
+          {isNative && mode === "local" && <p className="text-sm text-ink-2">{t("auth.modeLocalHint")}</p>}
+          {isNative && mode === "server" && (
             <Field
               label={t("auth.server")}
               hint={t("auth.serverHint")}
@@ -88,8 +108,8 @@ export function Login() {
             // In the app, registration needs to know which server to create the account on.
             if (!isNative) return;
             e.preventDefault();
-            if (!server.trim()) return setError(t("auth.serverHint"));
-            await setServer(server);
+            if (mode === "server" && !server.trim()) return setError(t("auth.serverHint"));
+            await setServer(mode === "local" ? LOCAL : server);
             nav("/register");
           }}
         >

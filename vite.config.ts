@@ -3,7 +3,15 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+// Local mode (src/local/) bundles the server into the app; these swap its Node-only imports for browser
+// versions. Not applied under vitest, where the server runs on real Node.
+const shim = (f: string) => new URL(`./src/local/shims/${f}`, import.meta.url).pathname;
+const localShims = process.env.VITEST
+  ? {}
+  : { "node:sqlite": shim("sqlite.ts"), "node:crypto": shim("crypto.ts"), "node:fs": shim("fs.ts"), "node:path": shim("path.ts") };
+
 export default defineConfig({
+  resolve: { alias: localShims },
   plugins: [
     react(),
     tailwindcss(),

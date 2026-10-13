@@ -9,6 +9,7 @@ import { Card, ErrorState, SectionTitle, Spinner, Button } from "../components/u
 import { ScoreRing, PillarBar } from "../components/ScoreRing";
 import { SessionCard } from "../components/SessionCard";
 import type { MetricType } from "../../shared/metrics";
+import { isLocal } from "../lib/native";
 
 const BASE_TILES: MetricType[] = ["steps", "resting_hr", "hrv", "vo2max", "spo2", "stress", "active_calories", "pai"];
 const STALE_MS = 24 * 3600_000;
@@ -95,18 +96,22 @@ export function Today() {
 
           <BioCard data={bio.data} />
 
-          <SectionTitle>{t("today.nextSession")}</SectionTitle>
-          {next ? (
-            <SessionCard booking={next} />
-          ) : (
-            <Card className="flex items-center justify-between">
-              <p className="text-sm text-ink-2">{t("today.noSession")}</p>
-              <Link to="/care">
-                <Button size="sm" variant="secondary">
-                  {t("today.bookOne")}
-                </Button>
-              </Link>
-            </Card>
+          {!isLocal() && (
+            <>
+              <SectionTitle>{t("today.nextSession")}</SectionTitle>
+              {next ? (
+                <SessionCard booking={next} />
+              ) : (
+                <Card className="flex items-center justify-between">
+                  <p className="text-sm text-ink-2">{t("today.noSession")}</p>
+                  <Link to="/care">
+                    <Button size="sm" variant="secondary">
+                      {t("today.bookOne")}
+                    </Button>
+                  </Link>
+                </Card>
+              )}
+            </>
           )}
 
           <SectionTitle>{t("today.metrics")}</SectionTitle>

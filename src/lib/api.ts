@@ -1,4 +1,4 @@
-import { apiUrl, authHeaders } from "./native";
+import { apiUrl, authHeaders, isLocal } from "./native";
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string) {
@@ -7,12 +7,14 @@ export class ApiError extends Error {
 }
 
 /** fetch() against the AEVUM API with the right base URL and credentials for web or native. */
-export function apiFetch(path: string, init: RequestInit = {}) {
-  return fetch(apiUrl(path), {
-    credentials: "same-origin",
-    ...init,
-    headers: { ...authHeaders(), ...(init.headers as Record<string, string> | undefined) },
-  });
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const req = { ...init, headers: { ...authHeaders(), ...(init.headers as Record<string, string> | undefined) } };
+  if (isLocal()) {
+    // Loaded on first use only, so the server code and SQLite never ship to web/server-mode users' first paint.
+    const { localFetch } = await import("../local/runtime");
+    return localFetch(`/api${path}`, req);
+  }
+  return fetch(apiUrl(path), { credentials: "same-origin", ...req });
 }
 
 export async function api<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {

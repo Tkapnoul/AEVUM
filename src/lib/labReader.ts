@@ -1,4 +1,4 @@
-import { apiUrl } from "./native";
+import { apiUrl, isLocal } from "./native";
 
 // Reads a lab report on the device, without AI: a PDF's text layer via pdf.js, and photos (or scanned PDFs)
 // via tesseract OCR. The OCR engine and Greek/English language data are served by our own server.
@@ -35,9 +35,9 @@ async function ocrCanvases(images: HTMLCanvasElement[], onStage: (s: ReadStage, 
   const { createWorker } = await import("tesseract.js");
   // English first: names are Greek but units, abbreviations (HDL, MCV, CRP) and decimals read far better this way.
   const worker = await createWorker(["eng", "ell"], 1, {
-    workerPath: abs("/ocr/worker.min.js"),
-    corePath: abs("/ocr/core"),
-    langPath: abs("/ocr/lang"),
+    // In local mode there is no server to host the engine; tesseract.js then loads it from its default CDN
+    // (jsDelivr, pinned to the installed version) on first use and caches the language data.
+    ...(isLocal() ? {} : { workerPath: abs("/ocr/worker.min.js"), corePath: abs("/ocr/core"), langPath: abs("/ocr/lang") }),
     gzip: true,
     logger: (m: { status: string; progress: number }) => {
       if (m.status === "recognizing text") onStage("ocr", m.progress);
