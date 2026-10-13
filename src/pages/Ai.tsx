@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowUp, Plus, Sparkles } from "lucide-react";
 import { useFetch } from "../lib/useFetch";
 import { useI18n, type MessageKey } from "../lib/i18n";
-import { post } from "../lib/api";
+import { apiFetch, post } from "../lib/api";
 import type { AppConfig } from "../lib/types";
 import { Card, PageHeader, cx } from "../components/ui";
 import { RichText } from "../components/RichText";
@@ -65,7 +65,7 @@ export function Ai() {
     setBusy(true);
     setMsgs((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "", status: "…" }]);
     try {
-      const res = await fetch("/api/ai/chat", {
+      const res = await apiFetch("/ai/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: text }),

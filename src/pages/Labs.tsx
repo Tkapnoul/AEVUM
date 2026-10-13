@@ -2,10 +2,13 @@ import { useFetch } from "../lib/useFetch";
 import { useI18n } from "../lib/i18n";
 import type { Lab } from "../lib/types";
 import { Card, Empty, ErrorState, PageHeader, Spinner, cx } from "../components/ui";
+import { AddLabs } from "../components/AddLabs";
+import { del } from "../lib/api";
 
-export function LabsPage({ member, onAdd }: { member?: string; onAdd?: React.ReactNode }) {
+export function LabsPage({ member, canEdit = true }: { member?: string; canEdit?: boolean }) {
   const { t, fmtDate, fmtNum } = useI18n();
   const res = useFetch<{ labs: Lab[] }>(`/metrics/labs${member ? `?member=${member}` : ""}`);
+  const q = member ? `?member=${member}` : "";
   if (res.loading && !res.data) return <Spinner />;
   if (res.error) return <ErrorState onRetry={res.reload} />;
   // Latest result per marker, keeping the previous one for the trend arrow.
@@ -15,7 +18,7 @@ export function LabsPage({ member, onAdd }: { member?: string; onAdd?: React.Rea
   return (
     <>
       {!member && <PageHeader title={t("data.labs")} back="/data" />}
-      {onAdd}
+      {canEdit && <AddLabs member={member} onSaved={res.reload} />}
       {byMarker.size === 0 ? (
         <Empty>{t("data.labsEmpty")}</Empty>
       ) : (
@@ -41,6 +44,18 @@ export function LabsPage({ member, onAdd }: { member?: string; onAdd?: React.Rea
                   </span>
                 </div>
                 {l.note && <p className="mt-2 text-sm text-ink-2">{l.note}</p>}
+                {canEdit && (
+                  <button
+                    className="mt-2 text-xs text-ink-3 hover:text-coral"
+                    onClick={async () => {
+                      if (!confirm(`${t("labs.delete")}: ${marker}?`)) return;
+                      await del(`/labs/${l.id}${q}`);
+                      void res.reload();
+                    }}
+                  >
+                    {t("labs.delete")}
+                  </button>
+                )}
               </Card>
             );
           })}

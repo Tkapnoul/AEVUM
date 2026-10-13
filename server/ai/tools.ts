@@ -66,6 +66,14 @@ export const TOOLS: Tool[] = [
     eager_input_streaming: true,
   },
   {
+    name: "get_bio_age",
+    description:
+      "The member's latest biological-age report (overall and per body system, drivers, recommendations, data gaps), their PhenoAge from blood tests if available, and earlier estimates.",
+    input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
+    strict: true,
+    eager_input_streaming: true,
+  },
+  {
     name: "list_sessions",
     description: "The member's upcoming or past 1-1 sessions, with the notes their experts shared with them.",
     input_schema: {
@@ -112,6 +120,18 @@ export function runTool(userId: string, name: string, input: unknown): unknown {
       );
       if (!experts.length) return { note: `No ${role} on the member's care team yet. They can browse all experts in the Care tab.` };
       return experts.map((e) => ({ expert: e.name, slots: openSlots(e.id, days).slice(0, 8).map((s) => iso(s.startsAt)) }));
+    }
+    case "get_bio_age": {
+      Empty.parse(input);
+      const rows = all<{ created_at: number; chrono_age: number; phenoage: number | null; result: string }>(
+        "SELECT created_at, chrono_age, phenoage, result FROM bio_age_reports WHERE user_id = ? AND status = 'done' ORDER BY created_at DESC LIMIT 5",
+        userId,
+      );
+      if (!rows.length) return { note: "No biological-age report yet. The member can run one from the Bio age screen." };
+      return {
+        latest: { date: iso(rows[0].created_at), chronological_age: rows[0].chrono_age, phenoage: rows[0].phenoage, report: JSON.parse(rows[0].result) },
+        history: rows.slice(1).map((r) => ({ date: iso(r.created_at), bio_age: JSON.parse(r.result).overall_bio_age })),
+      };
     }
     case "list_sessions": {
       const { scope } = Sessions.parse(input);

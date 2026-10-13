@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Watch, Sparkles, ChevronRight, RefreshCw } from "lucide-react";
+import { Watch, Sparkles, ChevronRight, RefreshCw, Hourglass } from "lucide-react";
 import { useFetch } from "../lib/useFetch";
 import { useI18n, type MessageKey } from "../lib/i18n";
 import { useSession } from "../lib/session";
@@ -10,7 +10,7 @@ import { ScoreRing, PillarBar } from "../components/ScoreRing";
 import { SessionCard } from "../components/SessionCard";
 import type { MetricType } from "../../shared/metrics";
 
-const TILES: MetricType[] = ["steps", "resting_hr", "stress", "spo2", "active_calories", "pai"];
+const BASE_TILES: MetricType[] = ["steps", "resting_hr", "hrv", "vo2max", "spo2", "stress", "active_calories", "pai"];
 const STALE_MS = 24 * 3600_000;
 
 function greeting(): MessageKey {
@@ -24,8 +24,11 @@ export function Today() {
   const summary = useFetch<Summary>("/metrics/summary", { pollMs: 60_000 });
   const bookings = useFetch<{ bookings: Booking[] }>("/care/bookings?scope=upcoming");
   const insight = useFetch<{ text: string | null; reason?: string }>("/ai/insight");
+  const bio = useFetch<{ chronoAge: number | null; latestDone: { report: { overall_bio_age: number } | null } | null }>("/bioage");
 
   const s = summary.data;
+  // Show the metrics this member's device actually provides (steps and resting HR always, as the basics).
+  const tiles = BASE_TILES.filter((type) => type === "steps" || type === "resting_hr" || s?.latest[type]);
   const next = bookings.data?.bookings.find((b) => b.status === "booked");
   const firstName = me?.name.split(" ")[0] ?? "";
 
@@ -70,7 +73,7 @@ export function Today() {
           </Card>
 
           {!s.device ? (
-            <Link to="/devices/bip6" className="mt-3 block">
+            <Link to="/devices" className="mt-3 block">
               <Card className="flex items-center gap-4">
                 <span className="flex size-11 items-center justify-center rounded-2xl bg-surface-2 text-gold">
                   <Watch className="size-5" aria-hidden />
@@ -89,6 +92,8 @@ export function Today() {
               {(!s.device.last_sync_at || Date.now() - s.device.last_sync_at > STALE_MS) && <span className="text-gold"> · {t("today.stale")}</span>}
             </p>
           )}
+
+          <BioCard data={bio.data} />
 
           <SectionTitle>{t("today.nextSession")}</SectionTitle>
           {next ? (
@@ -128,7 +133,7 @@ export function Today() {
                 </Card>
               </Link>
             )}
-            {TILES.map((type) => {
+            {tiles.map((type) => {
               const v = s.latest[type];
               const f = v ? fmtMetric(type, v.value, fmtNum) : null;
               return (
@@ -148,5 +153,28 @@ export function Today() {
         </>
       ) : null}
     </>
+  );
+}
+
+function BioCard({ data }: { data: { chronoAge: number | null; latestDone: { report: { overall_bio_age: number } | null } | null } | null }) {
+  const { t, fmtNum } = useI18n();
+  const bio = data?.latestDone?.report?.overall_bio_age ?? null;
+  const delta = bio != null && data?.chronoAge != null ? bio - data.chronoAge : null;
+  return (
+    <Link to="/bioage" className="mt-3 block">
+      <Card className="flex items-center gap-4">
+        <span className="flex size-11 items-center justify-center rounded-2xl bg-gold-soft text-gold">
+          <Hourglass className="size-5" aria-hidden />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">{t("bio.title")}</p>
+          <p className="truncate text-sm text-ink-2">
+            {delta == null ? t("bio.notYet") : delta < -0.4 ? t("bio.younger", { n: fmtNum(-delta, 1) }) : delta > 0.4 ? t("bio.older", { n: fmtNum(delta, 1) }) : t("bio.same")}
+          </p>
+        </div>
+        <span className="font-display text-3xl tabular">{bio != null ? fmtNum(bio, 1) : "—"}</span>
+        <ChevronRight className="size-5 text-ink-3" aria-hidden />
+      </Card>
+    </Link>
   );
 }

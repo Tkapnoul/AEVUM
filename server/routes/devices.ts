@@ -5,6 +5,8 @@ import { requireUser, type AppEnv } from "../auth.js";
 import { deviceToken, newId, pairingCode, sha256 } from "../lib/ids.js";
 import { body, HttpError, rateLimit } from "../lib/validate.js";
 import { upsertMetrics, upsertSleep, type MetricInput } from "../lib/metrics-store.js";
+import { createApiToken, deviceFromAuthHeader, HealthBatch, storeBatch } from "../lib/ingest.js";
+import { haeToBatch } from "../lib/hae.js";
 
 export const SUPPORTED_DEVICES = {
   amazfit_bip6: { name: "Amazfit Bip 6", source: "amazfit_bip6" },
@@ -35,6 +37,13 @@ deviceRoutes.post("/pairing-code", requireUser, async (c) => {
   const expiresAt = Date.now() + PAIRING_TTL_MS;
   run("INSERT INTO pairing_codes (code, user_id, kind, expires_at) VALUES (?, ?, ?, ?)", code, userId, b.kind, expiresAt);
   return c.json({ code, expiresAt });
+});
+
+/** Token for push-style sources (Health Auto Export on iPhone, Shortcuts, Tasker, scripts). Shown once. */
+deviceRoutes.post("/token", requireUser, async (c) => {
+  const b = await body(c, z.object({ kind: z.enum(["health_auto_export", "api"]) }));
+  rateLimit(`token:${c.get("user").id}`, 10, 3600_000);
+  return c.json({ token: createApiToken(c.get("user").id, b.kind) });
 });
 
 deviceRoutes.delete("/:id", requireUser, (c) => {
@@ -107,6 +116,35 @@ export const ZeppPayload = z.object({
     })
     .nullable()
     .optional(),
+});
+
+function apiDevice(c: { req: { header: (k: string) => string | undefined } }, kinds: string[]) {
+  const device = deviceFromAuthHeader(c.req.header("authorization"));
+  if (!device || !kinds.includes(device.kind)) throw new HttpError(401, "unauthorized");
+  rateLimit(`ingest:${device.id}`, 240, 3600_000);
+  return device;
+}
+
+/** Health Auto Export (iOS) REST automation: Apple Health data from any watch, pushed on a schedule. */
+deviceApi.post("/ingest/hae", async (c) => {
+  const device = apiDevice(c, ["health_auto_export"]);
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    throw new HttpError(400, "invalid_json");
+  }
+  const result = storeBatch(device.user_id, "health_auto_export", HealthBatch.parse(haeToBatch(raw)));
+  run("UPDATE devices SET last_sync_at = ? WHERE id = ?", Date.now(), device.id);
+  return c.json({ ok: true, ...result });
+});
+
+/** Documented JSON format for anything else (iOS Shortcuts, Android Tasker, scripts). See docs/api-ingest.md. */
+deviceApi.post("/ingest/generic", async (c) => {
+  const device = apiDevice(c, ["api", "health_auto_export"]);
+  const result = storeBatch(device.user_id, device.kind, await body(c, HealthBatch));
+  run("UPDATE devices SET last_sync_at = ? WHERE id = ?", Date.now(), device.id);
+  return c.json({ ok: true, ...result });
 });
 
 /** Batch upload from the AEVUM Zepp OS mini-app (see wearables/zepp-bip6). */

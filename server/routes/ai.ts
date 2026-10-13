@@ -11,11 +11,12 @@ import { isoDate } from "../lib/time.js";
 import { SYSTEM_PROMPT } from "../ai/prompt.js";
 import { TOOLS, runTool } from "../ai/tools.js";
 import { memberSnapshot } from "../ai/context.js";
+import { anthropic, FALLBACK } from "../ai/client.js";
 
 type MessageParam = Anthropic.Beta.BetaMessageParam;
 type ContentBlock = Anthropic.Beta.BetaContentBlock;
 
-const client = config.ai.enabled ? new Anthropic() : null;
+const client = anthropic;
 
 // A conversation is replayed append-only (thinking blocks must come back unchanged),
 // so instead of trimming old turns we start a fresh conversation after a pause or once it gets long.
@@ -23,8 +24,6 @@ const CONVERSATION_IDLE_MS = 6 * 3600_000;
 const CONVERSATION_MAX_ROWS = 80;
 const MAX_TOOL_ROUNDS = 6;
 
-// Server-side fallback: if a safety classifier declines, the API retries on the recommended fallback model.
-const FALLBACK = { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const };
 
 export const aiRoutes = new Hono<AppEnv>();
 aiRoutes.use("*", requireUser);

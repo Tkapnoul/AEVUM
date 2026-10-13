@@ -164,6 +164,26 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (user_id, date)
   );
   `,
+  `
+  ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+  -- Canonical marker key (shared/labs.ts) so calculators can find results regardless of how the lab printed the name.
+  ALTER TABLE labs ADD COLUMN marker_key TEXT;
+  CREATE INDEX labs_key ON labs(user_id, marker_key, taken_at);
+
+  CREATE TABLE bio_age_reports (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL,            -- pending | done | error
+    chrono_age REAL NOT NULL,
+    phenoage REAL,
+    result TEXT,                     -- JSON (BioAgeReport)
+    error TEXT,
+    model TEXT,
+    created_at INTEGER NOT NULL,
+    finished_at INTEGER
+  );
+  CREATE INDEX bio_age_user ON bio_age_reports(user_id, created_at);
+  `,
 ];
 
 function migrate() {

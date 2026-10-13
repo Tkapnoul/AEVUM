@@ -16,6 +16,10 @@ import { Chat } from "./pages/Chat";
 import { Ai } from "./pages/Ai";
 import { Profile } from "./pages/Profile";
 import { ConnectBip6 } from "./pages/ConnectBip6";
+import { Devices } from "./pages/Devices";
+import { BioAgePage } from "./pages/BioAge";
+import { Admin } from "./pages/Admin";
+import { useNativeAutoSync } from "./lib/useNativeAutoSync";
 import { ExpertHome } from "./pages/expert/ExpertHome";
 import { Clients } from "./pages/expert/Clients";
 import { ExpertMessages } from "./pages/expert/Messages";
@@ -39,6 +43,7 @@ function Routed({ onLocale }: { onLocale: (l: Locale) => void }) {
     }
     if (me && !saved) onLocale(me.locale);
   }, [me, onLocale]);
+  useNativeAutoSync(me?.role === "member");
   if (loading) return <Spinner />;
   if (!me)
     return (
@@ -73,10 +78,13 @@ function Routed({ onLocale }: { onLocale: (l: Locale) => void }) {
             <Route path="care/book/:expertId" element={<Book />} />
             <Route path="care/chat/:otherId" element={<Chat />} />
             <Route path="ai" element={<Ai />} />
+            <Route path="devices" element={<Devices />} />
             <Route path="devices/bip6" element={<ConnectBip6 />} />
+            <Route path="bioage" element={<BioAgePage />} />
           </>
         )}
         <Route path="care/session/:id" element={<SessionPage />} />
+        {Boolean(me.is_admin) && <Route path="admin" element={<Admin />} />}
         <Route path="profile" element={<Profile onLocale={onLocale} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

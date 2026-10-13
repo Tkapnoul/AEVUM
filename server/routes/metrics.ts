@@ -5,10 +5,12 @@ import { requireUser, type AppEnv } from "../auth.js";
 import { canViewMember } from "../lib/access.js";
 import { dailySeries, lastSleep, latestValue, samplesForDay, upsertMetrics } from "../lib/metrics-store.js";
 import { computeScore } from "../lib/score.js";
-import { body, HttpError } from "../lib/validate.js";
+import { body, HttpError, rateLimit } from "../lib/validate.js";
 import { newId } from "../lib/ids.js";
 import { isoDate } from "../lib/time.js";
 import { isMetricType, type MetricType } from "../../shared/metrics.js";
+import { HealthBatch, storeBatch, touchSessionSource } from "../lib/ingest.js";
+import { LAB_KEYS, matchLabKey } from "../../shared/labs.js";
 
 export const metricRoutes = new Hono<AppEnv>();
 metricRoutes.use("*", requireUser);
@@ -21,7 +23,10 @@ function subject(c: Context<AppEnv>) {
   return memberId;
 }
 
-const TODAY_TYPES: MetricType[] = ["steps", "active_calories", "resting_hr", "heart_rate", "spo2", "stress", "pai", "weight"];
+const TODAY_TYPES: MetricType[] = [
+  "steps", "active_calories", "resting_hr", "heart_rate", "spo2", "stress", "pai", "weight",
+  "hrv", "vo2max", "respiratory_rate", "bp_systolic", "bp_diastolic", "blood_glucose", "exercise_minutes",
+];
 
 metricRoutes.get("/summary", (c) => {
   const userId = subject(c);
@@ -66,11 +71,28 @@ metricRoutes.get("/sleep", (c) => {
   return c.json({ sessions: rows.reverse() });
 });
 
-// Manual entries (scale readings etc.) until more devices are integrated.
+/**
+ * Sync from the native app (Apple Health on iOS, Health Connect on Android) or an
+ * Apple Health export file processed on the phone. Uses the member's own session.
+ */
+metricRoutes.post("/ingest", async (c) => {
+  const b = await body(c, HealthBatch.extend({ source: z.enum(["apple_health", "health_connect", "apple_health_export"]) }));
+  const userId = c.get("user").id;
+  rateLimit(`sync:${userId}`, 120, 3600_000);
+  const result = storeBatch(userId, b.source, b);
+  touchSessionSource(userId, b.source);
+  return c.json({ ok: true, ...result });
+});
+
+// Manual entries (scale readings, BP cuff…) for anything not coming from a device.
 metricRoutes.post("/manual", async (c) => {
   const b = await body(
     c,
-    z.object({ type: z.enum(["weight", "body_fat"]), value: z.number().positive().max(500), date: z.iso.date().optional() }),
+    z.object({
+      type: z.enum(["weight", "body_fat", "bp_systolic", "bp_diastolic", "blood_glucose", "resting_hr", "vo2max"]),
+      value: z.number().positive().max(500),
+      date: z.iso.date().optional(),
+    }),
   );
   const ts = b.date ? Date.parse(`${b.date}T00:00:00Z`) : Date.now();
   upsertMetrics(c.get("user").id, "manual", [{ type: b.type, ts, value: b.value }]);
@@ -84,7 +106,7 @@ metricRoutes.get("/score", (c) => c.json(computeScore(subject(c))));
 metricRoutes.get("/labs", (c) => {
   const userId = subject(c);
   const rows = all<Record<string, unknown>>(
-    `SELECT l.id, l.marker, l.value, l.unit, l.ref_low, l.ref_high, l.taken_at, l.note, u.name AS entered_by_name
+    `SELECT l.id, l.marker, l.marker_key, l.value, l.unit, l.ref_low, l.ref_high, l.taken_at, l.note, u.name AS entered_by_name
      FROM labs l LEFT JOIN users u ON u.id = l.entered_by WHERE l.user_id = ? ORDER BY l.marker, l.taken_at`,
     userId,
   );
@@ -93,6 +115,7 @@ metricRoutes.get("/labs", (c) => {
 
 const LabInput = z.object({
   marker: z.string().trim().min(1).max(80),
+  markerKey: z.enum(LAB_KEYS).nullable().optional(),
   value: z.number(),
   unit: z.string().trim().max(20),
   refLow: z.number().nullable().optional(),
@@ -108,8 +131,9 @@ metricRoutes.post("/labs", async (c) => {
   if (viewer.id !== userId && viewer.role !== "doctor" && viewer.role !== "admin") throw new HttpError(403, "forbidden");
   const b = await body(c, LabInput);
   run(
-    "INSERT INTO labs (id, user_id, marker, value, unit, ref_low, ref_high, taken_at, entered_by, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    newId("lab"), userId, b.marker, b.value, b.unit, b.refLow ?? null, b.refHigh ?? null, Date.parse(`${b.takenAt}T00:00:00Z`), viewer.id, b.note,
+    "INSERT INTO labs (id, user_id, marker, marker_key, value, unit, ref_low, ref_high, taken_at, entered_by, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    newId("lab"), userId, b.marker, b.markerKey ?? matchLabKey(b.marker), b.value, b.unit, b.refLow ?? null, b.refHigh ?? null,
+    Date.parse(`${b.takenAt}T00:00:00Z`), viewer.id, b.note,
   );
   return c.json({ ok: true });
 });

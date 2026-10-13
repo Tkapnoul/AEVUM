@@ -44,7 +44,7 @@ export function ConnectBip6() {
 
   return (
     <>
-      <PageHeader title={t("device.bip6.title")} subtitle={t("device.bip6.intro")} back="/profile" />
+      <PageHeader title={t("device.bip6.title")} subtitle={t("device.bip6.intro")} back="/devices" />
 
       {current && (
         <Card className="mb-4 flex items-center gap-4 border-sage/40">

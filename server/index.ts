@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { secureHeaders } from "hono/secure-headers";
+import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { config } from "./config.js";
 import "./db.js";
@@ -9,9 +10,12 @@ import { HttpError } from "./lib/validate.js";
 import { authRoutes } from "./routes/auth.js";
 import { metricRoutes } from "./routes/metrics.js";
 import { careRoutes } from "./routes/care.js";
-import { deviceApi, deviceRoutes, SUPPORTED_DEVICES } from "./routes/devices.js";
+import { deviceApi, deviceRoutes } from "./routes/devices.js";
 import { expertRoutes } from "./routes/expert.js";
 import { aiRoutes } from "./routes/ai.js";
+import { adminRoutes } from "./routes/admin.js";
+import { bioAgeRoutes } from "./routes/bioage.js";
+import { labRoutes } from "./routes/labs.js";
 
 export const app = new Hono();
 
@@ -33,9 +37,16 @@ app.use(
   }),
 );
 
+// The native app's WebView runs on its own origin (capacitor://localhost on iOS, https://localhost on Android)
+// and authenticates with a Bearer token, never cookies.
+const NATIVE_ORIGINS = ["capacitor://localhost", "https://localhost", "http://localhost", "ionic://localhost"];
+app.use("/api/*", cors({ origin: (o) => (NATIVE_ORIGINS.includes(o) ? o : null), allowHeaders: ["content-type", "authorization"], maxAge: 86400 }));
+
 // Cookie-authenticated writes must come from our own pages (CSRF defence on top of SameSite=Lax).
+// Bearer-authenticated requests carry no ambient credentials, so they are exempt.
 app.use("/api/*", async (c, next) => {
-  if (c.req.method !== "GET" && c.req.method !== "HEAD" && !c.req.path.startsWith("/api/device/")) {
+  const bearer = c.req.header("authorization")?.startsWith("Bearer ");
+  if (c.req.method !== "GET" && c.req.method !== "HEAD" && c.req.method !== "OPTIONS" && !bearer && !c.req.path.startsWith("/api/device/")) {
     const origin = c.req.header("origin");
     if (origin && new URL(origin).host !== c.req.header("host")) return c.json({ error: "bad_origin" }, 403);
   }
@@ -54,7 +65,7 @@ app.get("/api/config", (c) =>
     publicUrl: config.publicUrl,
     aiEnabled: config.ai.enabled,
     clinicTimeZone: config.clinicTimeZone,
-    devices: Object.entries(SUPPORTED_DEVICES).map(([kind, d]) => ({ kind, name: d.name })),
+    zeppDevices: ["amazfit_bip6"],
   }),
 );
 app.route("/api/auth", authRoutes);
@@ -64,6 +75,9 @@ app.route("/api/devices", deviceRoutes);
 app.route("/api/device", deviceApi); // called by the watch's phone-side service, token auth
 app.route("/api/expert", expertRoutes);
 app.route("/api/ai", aiRoutes);
+app.route("/api/admin", adminRoutes);
+app.route("/api/bioage", bioAgeRoutes);
+app.route("/api/labs", labRoutes);
 app.all("/api/*", (c) => c.json({ error: "not_found" }, 404));
 
 if (config.isProd) {

@@ -1,0 +1,81 @@
+name: Android app
+
+# Builds the AEVUM Android app (APK) that reads Health Connect.
+# Download it from the run's "Artifacts", or from the "android-latest" release when published.
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths-ignore: ["**.md", "docs/**", "wearables/**"]
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "Server address pre-filled on the login screen (e.g. https://aevum.example.com)"
+        required: false
+      publish:
+        description: "Publish the APK as the 'android-latest' GitHub release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Build web app
+        run: npx vite build
+        env:
+          VITE_DEFAULT_SERVER: ${{ inputs.server_url || vars.AEVUM_SERVER_URL }}
+
+      - run: npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      # With a keystore in repository secrets every build is signed with the same key, so friends can
+      # update in place. Without it, a debug build is produced (uninstall before installing a new one).
+      - name: Build APK
+        working-directory: android
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          chmod +x gradlew
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/aevum.jks"
+            ./gradlew assembleRelease --no-daemon \
+              -Pandroid.injected.signing.store.file="$RUNNER_TEMP/aevum.jks" \
+              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$KEYSTORE_PASSWORD"
+            cp app/build/outputs/apk/release/app-release.apk ../aevum.apk
+          else
+            ./gradlew assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk ../aevum.apk
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aevum-android
+          path: aevum.apk
+
+      - name: Publish release
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete android-latest --yes --cleanup-tag || true
+          gh release create android-latest aevum.apk --title "AEVUM Android (latest)" --notes "Install aevum.apk on Android 8+. Health Connect is required (built in on Android 14+)." --target "$GITHUB_SHA"

@@ -29,6 +29,19 @@ export function fmtMetric(type: MetricType, value: number, fmtNum: (n: number, d
       return { value: fmtNum(value), unit: "kcal" };
     case "weight":
       return { value: fmtNum(value, 1), unit: "kg" };
+    case "hrv":
+      return { value: fmtNum(value), unit: "ms" };
+    case "vo2max":
+      return { value: fmtNum(value, 1), unit: "ml/kg/min" };
+    case "respiratory_rate":
+      return { value: fmtNum(value, 1), unit: "/min" };
+    case "bp_systolic":
+    case "bp_diastolic":
+      return { value: fmtNum(value), unit: "mmHg" };
+    case "blood_glucose":
+      return { value: fmtNum(value), unit: "mg/dL" };
+    case "exercise_minutes":
+      return { value: fmtNum(value), unit: "min" };
   }
 }
 

@@ -1,15 +1,25 @@
+import { apiUrl, authHeaders } from "./native";
+
 export class ApiError extends Error {
   constructor(public status: number, public code: string) {
     super(code);
   }
 }
 
+/** fetch() against the AEVUM API with the right base URL and credentials for web or native. */
+export function apiFetch(path: string, init: RequestInit = {}) {
+  return fetch(apiUrl(path), {
+    credentials: "same-origin",
+    ...init,
+    headers: { ...authHeaders(), ...(init.headers as Record<string, string> | undefined) },
+  });
+}
+
 export async function api<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
   const { json, ...rest } = init;
-  const res = await fetch(`/api${path}`, {
-    credentials: "same-origin",
+  const res = await apiFetch(path, {
     ...rest,
-    headers: { ...(json !== undefined ? { "content-type": "application/json" } : {}), ...rest.headers },
+    headers: { ...(json !== undefined ? { "content-type": "application/json" } : {}), ...(rest.headers as Record<string, string> | undefined) },
     body: json !== undefined ? JSON.stringify(json) : rest.body,
   });
   if (!res.ok) {

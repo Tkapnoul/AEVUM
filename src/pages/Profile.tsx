@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, Download, LogOut, Smartphone, Watch } from "lucide-react";
+import { ChevronRight, Download, LogOut, Shield, Smartphone, Watch } from "lucide-react";
 import { useFetch } from "../lib/useFetch";
 import { useI18n } from "../lib/i18n";
 import { useSession } from "../lib/session";
@@ -9,10 +9,9 @@ import { applyTheme, getTheme, type ThemePref } from "../lib/theme";
 import { useInstall } from "../lib/install";
 import { timeAgo } from "../lib/format";
 import type { Device } from "../lib/types";
+import { isNative } from "../lib/native";
 import { Avatar, Button, Card, PageHeader, SectionTitle, Segmented } from "../components/ui";
 import { company, type Locale } from "../../shared/company";
-
-const FUTURE_DEVICES = ["Apple Health", "Health Connect (Android)", "Garmin", "Oura", "Withings"];
 
 export function Profile({ onLocale }: { onLocale: (l: Locale) => void }) {
   const { t, locale } = useI18n();
@@ -22,7 +21,7 @@ export function Profile({ onLocale }: { onLocale: (l: Locale) => void }) {
   const install = useInstall();
   if (!me) return null;
   const isMember = me.role === "member";
-  const bip = devices.data?.devices.find((d) => d.kind === "amazfit_bip6");
+  const connected = devices.data?.devices ?? [];
 
   return (
     <>
@@ -51,26 +50,33 @@ export function Profile({ onLocale }: { onLocale: (l: Locale) => void }) {
       {isMember && (
         <>
           <SectionTitle>{t("profile.devices")}</SectionTitle>
-          <Card className="divide-y divide-line p-0">
-            <Link to="/devices/bip6" className="flex items-center gap-4 px-5 py-4">
+          <Link to="/devices">
+            <Card className="flex items-center gap-4 p-4">
               <Watch className="size-5 text-gold" aria-hidden />
-              <div className="flex-1">
-                <p className="font-medium">Amazfit Bip 6</p>
-                <p className="text-xs text-ink-3">
-                  {bip ? `${t("device.connected")} · ${t("today.lastSync")} ${bip.last_sync_at ? timeAgo(bip.last_sync_at, locale) : t("device.never")}` : t("profile.connect")}
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">{t("data.devices")}</p>
+                <p className="truncate text-xs text-ink-3">
+                  {connected.length
+                    ? connected.map((d) => `${d.name}${d.last_sync_at ? ` · ${timeAgo(d.last_sync_at, locale)}` : ""}`).join(" — ")
+                    : t("profile.connect")}
                 </p>
               </div>
               <ChevronRight className="size-5 text-ink-3" aria-hidden />
-            </Link>
-            {FUTURE_DEVICES.map((d) => (
-              <div key={d} className="flex items-center gap-4 px-5 py-3.5 text-ink-3">
-                <Watch className="size-5" aria-hidden />
-                <span className="flex-1 text-sm">{d}</span>
-                <span className="text-xs">{t("profile.comingSoon")}</span>
-              </div>
-            ))}
-          </Card>
+            </Card>
+          </Link>
+          <SectionTitle>{t("profile.details")}</SectionTitle>
+          <DetailsForm />
         </>
+      )}
+
+      {Boolean(me.is_admin) && (
+        <Link to="/admin" className="mt-3 block">
+          <Card className="flex items-center gap-3 p-4">
+            <Shield className="size-5 text-gold" aria-hidden />
+            <span className="flex-1 font-medium">{t("profile.admin")}</span>
+            <ChevronRight className="size-5 text-ink-3" aria-hidden />
+          </Card>
+        </Link>
       )}
 
       {!isMember && (
@@ -82,8 +88,8 @@ export function Profile({ onLocale }: { onLocale: (l: Locale) => void }) {
         </Link>
       )}
 
-      <SectionTitle>{t("profile.install")}</SectionTitle>
-      <Card className="flex items-start gap-4">
+      {!isNative && <SectionTitle>{t("profile.install")}</SectionTitle>}
+      <Card className={isNative ? "hidden" : "flex items-start gap-4"}>
         <Smartphone className="mt-0.5 size-5 shrink-0 text-gold" aria-hidden />
         <div className="flex-1 text-sm">
           {install.installed ? (
@@ -132,9 +138,11 @@ export function Profile({ onLocale }: { onLocale: (l: Locale) => void }) {
 
       <SectionTitle>{t("profile.privacy")}</SectionTitle>
       <Card className="divide-y divide-line p-0">
-        <a href="/api/auth/me/export" className="flex items-center gap-4 px-5 py-4 text-sm">
-          <Download className="size-5 text-ink-2" aria-hidden /> {t("profile.export")}
-        </a>
+        {!isNative && (
+          <a href="/api/auth/me/export" className="flex items-center gap-4 px-5 py-4 text-sm">
+            <Download className="size-5 text-ink-2" aria-hidden /> {t("profile.export")}
+          </a>
+        )}
         <DeleteAccount onDeleted={logout} />
       </Card>
 
@@ -191,5 +199,53 @@ function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
         </Button>
       </div>
     </form>
+  );
+}
+
+function DetailsForm() {
+  const { t } = useI18n();
+  const { me, refresh } = useSession();
+  const [f, setF] = useState({ birthDate: me?.birth_date ?? "", sex: me?.sex ?? "", heightCm: me?.height_cm ? String(me.height_cm) : "" });
+  const [saved, setSaved] = useState(false);
+  return (
+    <Card>
+      <form
+        className="space-y-3"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          await patch("/auth/me", {
+            birthDate: f.birthDate || null,
+            sex: f.sex || null,
+            heightCm: f.heightCm ? Number(f.heightCm) : null,
+          });
+          await refresh();
+          setSaved(true);
+          setTimeout(() => setSaved(false), 1500);
+        }}
+      >
+        <label className="block text-sm text-ink-2">
+          {t("auth.birthDate")}
+          <input type="date" value={f.birthDate} onChange={(e) => setF({ ...f, birthDate: e.target.value })} className="mt-1 block h-11 w-full rounded-2xl border border-line bg-surface px-3 text-[16px] text-ink" />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-sm text-ink-2">
+            {t("auth.sex")}
+            <select value={f.sex} onChange={(e) => setF({ ...f, sex: e.target.value })} className="mt-1 block h-11 w-full rounded-2xl border border-line bg-surface px-3 text-[16px] text-ink">
+              <option value="">—</option>
+              <option value="female">{t("auth.sex.female")}</option>
+              <option value="male">{t("auth.sex.male")}</option>
+              <option value="other">{t("auth.sex.other")}</option>
+            </select>
+          </label>
+          <label className="block text-sm text-ink-2">
+            {t("auth.height")}
+            <input inputMode="numeric" value={f.heightCm} onChange={(e) => setF({ ...f, heightCm: e.target.value })} className="mt-1 block h-11 w-full rounded-2xl border border-line bg-surface px-3 text-[16px] text-ink" />
+          </label>
+        </div>
+        <Button type="submit" size="sm">
+          {saved ? t("common.saved") : t("common.save")}
+        </Button>
+      </form>
+    </Card>
   );
 }

@@ -34,6 +34,10 @@ export function memberSnapshot(userId: string, now = Date.now()): string {
     userId, now,
   );
 
+  const bio = get<{ result: string; created_at: number }>(
+    "SELECT result, created_at FROM bio_age_reports WHERE user_id = ? AND status = 'done' ORDER BY created_at DESC LIMIT 1",
+    userId,
+  );
   const lines = [
     `Snapshot taken: ${new Date(now).toISOString()}`,
     `Member: ${u.name}${age != null ? `, ${age} y` : ""}${u.sex ? `, ${u.sex}` : ""}${u.height_cm ? `, ${u.height_cm} cm` : ""}`,
@@ -44,6 +48,7 @@ export function memberSnapshot(userId: string, now = Date.now()): string {
     `7-day averages: steps ${avg("steps", 7) ?? "n/a"}, resting HR ${avg("resting_hr", 7) ?? "n/a"} bpm, sleep ${avg("sleep_minutes", 7) ?? "n/a"} min, stress ${avg("stress", 7) ?? "n/a"}/100, SpO2 ${avg("spo2", 7) ?? "n/a"}%`,
     `30-day averages: steps ${avg("steps", 30) ?? "n/a"}, resting HR ${avg("resting_hr", 30) ?? "n/a"} bpm, sleep ${avg("sleep_minutes", 30) ?? "n/a"} min, stress ${avg("stress", 30) ?? "n/a"}/100`,
     `Last night: ${sleep ? `${sleep.date}, ${sleep.total_min} min total, deep ${sleep.deep_min ?? "n/a"} min, score ${sleep.score ?? "n/a"}` : "no sleep data"}`,
+    `Biological age: ${bio ? `${JSON.parse(bio.result).overall_bio_age} (report from ${new Date(bio.created_at).toISOString().slice(0, 10)}; details via get_bio_age)` : "not estimated yet"}`,
     `Care team: ${team.length ? team.map((t) => `${t.name} (${t.title || t.role})`).join("; ") : "none assigned"}`,
     `Upcoming sessions: ${upcoming.length ? upcoming.map((b) => `${new Date(b.starts_at).toISOString()} with ${b.name} (${b.role})${b.topic ? ` — ${b.topic}` : ""}`).join("; ") : "none"}`,
   ];

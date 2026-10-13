@@ -3,6 +3,7 @@ import { Video } from "lucide-react";
 import type { Booking } from "../lib/types";
 import { useI18n } from "../lib/i18n";
 import { Avatar, Button } from "./ui";
+import { openExternal } from "../lib/native";
 
 const JOIN_WINDOW_MS = 10 * 60_000;
 
@@ -26,11 +27,9 @@ export function SessionCard({ booking, viewAs = "member" }: { booking: Booking; 
         </div>
       </Link>
       {joinable && (
-        <a href={booking.room_url} target="_blank" rel="noopener noreferrer">
-          <Button size="sm">
-            <Video className="size-4" aria-hidden /> {t("care.join")}
-          </Button>
-        </a>
+        <Button size="sm" onClick={() => void openExternal(booking.room_url)}>
+          <Video className="size-4" aria-hidden /> {t("care.join")}
+        </Button>
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, post } from "./api";
+import { isNative, setToken } from "./native";
 import type { Role } from "../../shared/metrics";
 import type { Locale } from "../../shared/company";
 
@@ -15,6 +16,7 @@ export interface Me {
   goals: string[];
   plan: string | null;
   created_at: number;
+  is_admin: number;
 }
 
 interface Session {
@@ -42,6 +44,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await post("/auth/logout").catch(() => undefined);
+    if (isNative) await setToken(null);
     // Health data cached for offline use must not outlive the session.
     if ("caches" in window) await caches.delete("aevum-data").catch(() => undefined);
     setMe(null);

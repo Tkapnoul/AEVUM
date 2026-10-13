@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ChevronRight, FlaskConical, Moon, Plus } from "lucide-react";
+import { ChevronRight, FlaskConical, Hourglass, Moon, Plus, Watch } from "lucide-react";
 import { useFetch } from "../lib/useFetch";
 import { useI18n } from "../lib/i18n";
 import { fmtMetric } from "../lib/format";
@@ -10,8 +10,14 @@ import { Card, ErrorState, PageHeader, Segmented, SectionTitle, Spinner, Button,
 import { TrendChart } from "../components/TrendChart";
 import { isMetricType, type MetricType } from "../../shared/metrics";
 
-const CHIPS: MetricType[] = ["steps", "resting_hr", "sleep_minutes", "stress", "spo2", "heart_rate", "active_calories", "pai", "weight"];
-const BAR_TYPES: MetricType[] = ["steps", "active_calories", "sleep_minutes", "pai", "distance"];
+const CHIPS: MetricType[] = [
+  "steps", "resting_hr", "hrv", "sleep_minutes", "vo2max", "heart_rate", "spo2", "stress", "respiratory_rate",
+  "active_calories", "exercise_minutes", "bp_systolic", "bp_diastolic", "blood_glucose", "weight", "body_fat", "pai",
+];
+const BAR_TYPES: MetricType[] = ["steps", "active_calories", "sleep_minutes", "pai", "distance", "exercise_minutes"];
+const MANUAL: Partial<Record<MetricType, "weight" | "bp" | "blood_glucose" | "body_fat">> = {
+  weight: "weight", body_fat: "body_fat", bp_systolic: "bp", bp_diastolic: "bp", blood_glucose: "blood_glucose",
+};
 
 export function DataPage({ member }: { member?: string }) {
   const params = useParams();
@@ -103,7 +109,7 @@ export function DataPage({ member }: { member?: string }) {
         </Card>
       )}
 
-      {type === "weight" && !member && <WeightEntry onSaved={series.reload} />}
+      {MANUAL[type] && !member && <ManualEntry kind={MANUAL[type]!} onSaved={series.reload} />}
 
       <p className="mt-3 px-1 text-xs text-ink-3">{t("data.wellnessNote")}</p>
 
@@ -111,8 +117,10 @@ export function DataPage({ member }: { member?: string }) {
         <>
           <SectionTitle>{t("nav.data")}</SectionTitle>
           <div className="space-y-3">
+            <LinkCard to="/bioage" icon={<Hourglass className="size-5" aria-hidden />} title={t("bio.title")} />
             <LinkCard to="/data/sleep-detail" icon={<Moon className="size-5" aria-hidden />} title={t("data.sleep")} />
             <LinkCard to="/data/labs" icon={<FlaskConical className="size-5" aria-hidden />} title={t("data.labs")} />
+            <LinkCard to="/devices" icon={<Watch className="size-5" aria-hidden />} title={t("data.devices")} />
           </div>
         </>
       )}
@@ -158,15 +166,17 @@ function TrendChartRaw({ points, fmt }: { points: { date: string; value: number 
   );
 }
 
-function WeightEntry({ onSaved }: { onSaved: () => void }) {
+function ManualEntry({ kind, onSaved }: { kind: "weight" | "bp" | "blood_glucose" | "body_fat"; onSaved: () => void }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
   const [busy, setBusy] = useState(false);
+  const label = kind === "bp" ? t("data.bp") : kind === "weight" ? `${t("metric.weight")} (kg)` : kind === "body_fat" ? `${t("metric.body_fat")} (%)` : `${t("metric.blood_glucose")} (mg/dL)`;
   if (!open)
     return (
       <Button variant="secondary" size="sm" className="mt-3" onClick={() => setOpen(true)}>
-        <Plus className="size-4" aria-hidden /> {t("data.addWeight")}
+        <Plus className="size-4" aria-hidden /> {t("data.addEntry")}: {kind === "bp" ? t("data.bp") : t(`metric.${kind}`)}
       </Button>
     );
   return (
@@ -176,15 +186,28 @@ function WeightEntry({ onSaved }: { onSaved: () => void }) {
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
-          await post("/metrics/manual", { type: "weight", value: Number(value) }).finally(() => setBusy(false));
+          try {
+            if (kind === "bp") {
+              await post("/metrics/manual", { type: "bp_systolic", value: Number(a) });
+              await post("/metrics/manual", { type: "bp_diastolic", value: Number(b) });
+            } else await post("/metrics/manual", { type: kind, value: Number(a.replace(",", ".")) });
+          } finally {
+            setBusy(false);
+          }
           setOpen(false);
-          setValue("");
+          setA("");
+          setB("");
           onSaved();
         }}
       >
         <div className="flex-1">
-          <Field label={`${t("metric.weight")} (kg)`} type="number" step="0.1" inputMode="decimal" required value={value} onChange={(e) => setValue(e.target.value)} />
+          <Field label={kind === "bp" ? t("data.systolic") : label} type="number" step="0.1" inputMode="decimal" required value={a} onChange={(e) => setA(e.target.value)} />
         </div>
+        {kind === "bp" && (
+          <div className="flex-1">
+            <Field label={t("data.diastolic")} type="number" inputMode="numeric" required value={b} onChange={(e) => setB(e.target.value)} />
+          </div>
+        )}
         <Button type="submit" loading={busy}>
           {t("common.save")}
         </Button>
@@ -192,4 +215,3 @@ function WeightEntry({ onSaved }: { onSaved: () => void }) {
     </Card>
   );
 }
-

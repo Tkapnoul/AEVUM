@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Check } from "lucide-react";
 import { post, ApiError } from "../lib/api";
+import { getServer, isNative, setToken } from "../lib/native";
 import { useI18n } from "../lib/i18n";
 import { useSession } from "../lib/session";
 import { Button, Field, cx } from "../components/ui";
@@ -15,7 +16,7 @@ export function Register() {
   const { refresh } = useSession();
   const nav = useNavigate();
   const [step, setStep] = useState<Step>(0);
-  const [f, setF] = useState({ name: "", email: "", password: "", birthDate: "", sex: "", heightCm: "", goals: [] as string[], consent: false });
+  const [f, setF] = useState({ name: "", email: "", password: "", birthDate: "", sex: "", heightCm: "", goals: [] as string[] });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
@@ -26,7 +27,7 @@ export function Register() {
     setBusy(true);
     setError(null);
     try {
-      await post("/auth/register", {
+      const res = await post<{ token?: string }>("/auth/register", {
         name: f.name,
         email: f.email,
         password: f.password,
@@ -35,8 +36,9 @@ export function Register() {
         sex: f.sex || undefined,
         heightCm: f.heightCm ? Number(f.heightCm) : undefined,
         goals: f.goals,
-        consent: f.consent,
+        client: isNative ? "native" : "web",
       });
+      if (isNative && res.token) await setToken(res.token);
       await refresh();
       nav("/", { replace: true });
     } catch (err) {
@@ -50,6 +52,8 @@ export function Register() {
   }
 
   const steps = [t("auth.step.account"), t("auth.step.about"), t("auth.step.goals")];
+  // In the app, the server address is chosen on the login screen first.
+  if (isNative && !getServer()) return <Navigate to="/login" replace />;
 
   return (
     <div className="pt-safe mx-auto flex min-h-dvh max-w-md flex-col px-6 pb-10">
@@ -131,10 +135,6 @@ export function Register() {
                   );
                 })}
               </div>
-              <label className="mt-2 flex items-start gap-3 text-sm text-ink-2">
-                <input type="checkbox" required checked={f.consent} onChange={(e) => set("consent", e.target.checked)} className="mt-1 size-4 accent-[var(--gold)]" />
-                <span>{t("auth.consent", { company: company.name })}</span>
-              </label>
             </>
           )}
           {error && (

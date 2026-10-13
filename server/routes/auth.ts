@@ -17,7 +17,7 @@ const Register = z.object({
   sex: z.enum(["female", "male", "other"]).optional(),
   heightCm: z.number().min(100).max(250).optional(),
   goals: z.array(z.string().max(40)).max(10).default([]),
-  consent: z.literal(true),
+  client: z.enum(["web", "native"]).default("web"),
 });
 
 authRoutes.post("/register", async (c) => {
@@ -27,11 +27,13 @@ authRoutes.post("/register", async (c) => {
   const id = newId("u");
   const hash = await hashPassword(b.password);
   tx(() => {
+    // The very first account is the admin: it can turn friends into coaches/doctors from Profile › Admin.
+    const first = !get("SELECT 1 FROM users WHERE is_admin = 1 LIMIT 1");
     run(
-      `INSERT INTO users (id, email, password_hash, name, role, locale, birth_date, sex, height_cm, goals, plan, consent_at, created_at)
-       VALUES (?, ?, ?, ?, 'member', ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users (id, email, password_hash, name, role, locale, birth_date, sex, height_cm, goals, plan, consent_at, created_at, is_admin)
+       VALUES (?, ?, ?, ?, 'member', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, b.email, hash, b.name, b.locale, b.birthDate ?? null, b.sex ?? null, b.heightCm ?? null,
-      JSON.stringify(b.goals), company.plans[0]?.id ?? null, Date.now(), Date.now(),
+      JSON.stringify(b.goals), company.plans[0]?.id ?? null, Date.now(), Date.now(), first ? 1 : 0,
     );
     // Every new member is matched with one expert per role in the company's default
     // care-team model (e.g. a coach and a doctor), picking whoever has the fewest members.
@@ -45,17 +47,17 @@ authRoutes.post("/register", async (c) => {
       if (expert) run("INSERT INTO care_team (member_id, expert_id, is_primary, created_at) VALUES (?, ?, 1, ?)", id, expert.id, Date.now());
     }
   });
-  await startSession(c, id);
-  return c.json({ ok: true });
+  const token = await startSession(c, id, b.client === "native");
+  return c.json({ ok: true, token });
 });
 
 authRoutes.post("/login", async (c) => {
-  const b = await body(c, z.object({ email: z.string().max(200), password: z.string().max(200) }));
+  const b = await body(c, z.object({ email: z.string().max(200), password: z.string().max(200), client: z.enum(["web", "native"]).default("web") }));
   rateLimit(`login:${b.email.toLowerCase()}`, 10, 15 * 60_000);
   const u = get<{ id: string; password_hash: string }>("SELECT id, password_hash FROM users WHERE email = ?", b.email);
   if (!u || !(await verifyPassword(b.password, u.password_hash))) throw new HttpError(401, "invalid_credentials");
-  await startSession(c, u.id);
-  return c.json({ ok: true });
+  const token = await startSession(c, u.id, b.client === "native");
+  return c.json({ ok: true, token });
 });
 
 authRoutes.post("/logout", (c) => {
@@ -65,7 +67,7 @@ authRoutes.post("/logout", (c) => {
 
 authRoutes.get("/me", requireUser, (c) => {
   const u = get<Record<string, unknown>>(
-    "SELECT id, email, name, role, locale, birth_date, sex, height_cm, goals, plan, created_at FROM users WHERE id = ?",
+    "SELECT id, email, name, role, locale, birth_date, sex, height_cm, goals, plan, created_at, is_admin FROM users WHERE id = ?",
     c.get("user").id,
   )!;
   return c.json({ ...u, goals: JSON.parse(u.goals as string) });

@@ -8,6 +8,7 @@ import { post } from "../lib/api";
 import type { BookingDetail } from "../lib/types";
 import { Avatar, Button, Card, ErrorState, PageHeader, SectionTitle, Spinner, cx } from "../components/ui";
 import { canJoin } from "../components/SessionCard";
+import { openExternal } from "../lib/native";
 
 export function SessionPage() {
   const { id } = useParams();
@@ -56,11 +57,9 @@ export function SessionPage() {
 
         {b.status === "booked" && (
           <div className="mt-5 space-y-2">
-            <a href={joinable ? b.room_url : undefined} target="_blank" rel="noopener noreferrer" aria-disabled={!joinable}>
-              <Button className="w-full" disabled={!joinable}>
-                <Video className="size-5" aria-hidden /> {joinable ? t("care.join") : t("care.joinSoon")}
-              </Button>
-            </a>
+            <Button className="w-full" disabled={!joinable} onClick={() => void openExternal(b.room_url)}>
+              <Video className="size-5" aria-hidden /> {joinable ? t("care.join") : t("care.joinSoon")}
+            </Button>
             <p className="text-center text-xs text-ink-3">{t("care.videoNote")}</p>
           </div>
         )}
